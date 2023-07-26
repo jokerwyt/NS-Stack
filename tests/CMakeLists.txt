@@ -1,0 +1,1 @@
+add_executable(logger_test logger_test.c)
