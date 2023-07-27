@@ -8,7 +8,8 @@
 
 // it is actually a FrameReceiveCallback.
 // I dont want to use mutex, for simplicity.
-static atomic_size_t recv_callback = ATOMIC_VAR_INIT(0);
+#define NONE 0
+static atomic_size_t recv_callback = ATOMIC_VAR_INIT(NONE);
 
 int send_frame(const void* buf, int len, int ethtype, const void* destmac, int id) {
     static char frame[ETHER_MAX_LEN];
@@ -56,8 +57,9 @@ void callback_wrapper_(
     // * @param buf Pointer to the frame.
     // * @param len Length of the frame.
     // * @param id ID of the device (returned by ‘addDevice‘) receiving current frame.
-    ((FrameReceiveCallback)atomic_load(&recv_callback))
-        (bytes, h->len, dev_id);
+    size_t loadout = atomic_load(&recv_callback);
+    if (loadout != NONE)
+        ((FrameReceiveCallback)(loadout))(bytes, h->len, dev_id);
 }
 
 pcap_handler callback_wrapper = &callback_wrapper_;

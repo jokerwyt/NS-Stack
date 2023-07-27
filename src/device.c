@@ -84,3 +84,21 @@ pcap_t* get_pcap_handle(int id) {
     }
     return dev[id];
 }
+
+void print_device_lists() {
+    pcap_if_t *alldevs;
+    char errbuf[PCAP_ERRBUF_SIZE];
+    
+    if (pcap_findalldevs(&alldevs, errbuf) == -1) {
+        logError("Error finding devices: %s\n", errbuf);
+        return;
+    }
+
+    for (pcap_if_t *dev = alldevs; dev != NULL; dev = dev->next) {
+        printf("Device name: %s\n", dev->name);
+        printf("Device description: %s\n", dev->description);
+        printf("\n");
+    }
+
+    pcap_freealldevs(alldevs);
+}

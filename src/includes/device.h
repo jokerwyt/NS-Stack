@@ -31,3 +31,7 @@ int is_valid_id(int id);
 
 // return NULL for invalid.
 pcap_t* get_pcap_handle(int id);
+
+// list possible devices
+// TODO: it's not an API for use now.  let it return char**.
+void print_device_lists();
