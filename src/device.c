@@ -9,7 +9,7 @@
 
 #define MAX_DEVICE_NUM 256
 
-static int device_count = 0;
+static atomic_int device_count = ATOMIC_VAR_INIT(0);
 static char *dev_name[MAX_DEVICE_NUM];
 static char dev_mac_addr[MAX_DEVICE_NUM][ETH_ALEN];
 static pcap_t *dev[MAX_DEVICE_NUM];
@@ -44,19 +44,19 @@ int add_device(const char* device) {
         return -1;
     }
 
-    dev[device_count] = handle;
-    dev_name[device_count] = strdup(device);
+    int new_id = atomic_fetch_add(&device_count, 1);
 
-    device_count++;
-
+    dev[new_id] = handle;
+    dev_name[new_id] = strdup(device);
     // ========== fire recv thread ==========
-    recv_thread_go(device_count);
+    recv_thread_go(new_id);
 
-    return device_count;
+    return new_id;
 }
 
 int find_device(const char* device) {
-    for (int id = 0; id < device_count; id++) {
+    int dcnt = atomic_load(&device_count);
+    for (int id = 0; id < dcnt; id++) {
         if (strcmp(device, dev_name[id]) == 0) {
             return id;
         }
@@ -65,7 +65,7 @@ int find_device(const char* device) {
     return -1;
 }
 
-char* dev_mac(int id) {
+const char* dev_mac(int id) {
     if (!is_valid_id(id)) {
         logError("try to get invalid device mac. id=%d", id);
         return NULL;
@@ -74,7 +74,7 @@ char* dev_mac(int id) {
 }
 
 int is_valid_id(int id) {
-    return id >= device_count;
+    return 0 <= id && id < atomic_load(&device_count);
 }
 
 pcap_t* get_pcap_handle(int id) {
@@ -85,20 +85,26 @@ pcap_t* get_pcap_handle(int id) {
     return dev[id];
 }
 
-void print_device_lists() {
+char ** get_host_device_lists(int *n) {
     pcap_if_t *alldevs;
     char errbuf[PCAP_ERRBUF_SIZE];
     
+    *n = 0;
     if (pcap_findalldevs(&alldevs, errbuf) == -1) {
         logError("Error finding devices: %s\n", errbuf);
-        return;
+        return NULL;
     }
 
     for (pcap_if_t *dev = alldevs; dev != NULL; dev = dev->next) {
-        printf("Device name: %s\n", dev->name);
-        printf("Device description: %s\n", dev->description);
-        printf("\n");
+        (*n)++;        
+    }
+
+    char **ret = malloc(sizeof(char*) * (*n));
+    int i = 0;
+    for (pcap_if_t *dev = alldevs; dev != NULL; dev = dev->next) {
+        ret[i++] = strdup(dev->name);
     }
 
     pcap_freealldevs(alldevs);
+    return ret;
 }

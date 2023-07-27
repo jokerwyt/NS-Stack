@@ -41,6 +41,7 @@ int send_frame(const void* buf, int len, int ethtype, const void* destmac, int i
         return -1;
     }
 
+    logDebug("a packet was sent to device %d, frame_len=%u, workload_len=%u", id, frame_length, len);
     return 0; // 0 for success
 }
 
