@@ -1,9 +1,11 @@
 #!/bin/bash
+ROOT_DIR=$(dirname $(dirname $(dirname $(realpath $0))))
+UTILS_DIR=$ROOT_DIR/vnetUtils/helper
 
-./vecho "\e[1;34m$0 $*\e[0m"
+$UTILS_DIR/vecho "\e[1;34m$0 $*\e[0m"
 if [[ "s${2: -3:3}" != "sns0" ]]; 
 then
-    ./vdo ip link set $1 netns $2
+    $UTILS_DIR/vdo ip link set $1 netns $2
 else 
-    ./vdo ip link set $1 netns $$
+    $UTILS_DIR/vdo ip link set $1 netns $$
 fi

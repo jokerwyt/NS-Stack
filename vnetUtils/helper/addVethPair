@@ -1,4 +1,6 @@
 #!/bin/bash
+ROOT_DIR=$(dirname $(dirname $(dirname $(realpath $0))))
+UTILS_DIR=$ROOT_DIR/vnetUtils/helper
 
-./vecho "\e[1;34m$0 $*\e[0m"
-./vdo ip link add $1 type veth peer name $2
+$UTILS_DIR/vecho "\e[1;34m$0 $*\e[0m"
+$UTILS_DIR/vdo ip link add $1 type veth peer name $2

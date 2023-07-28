@@ -1,6 +1,8 @@
 #!/bin/bash
+ROOT_DIR=$(dirname $(dirname $(dirname $(realpath $0))))
+UTILS_DIR=$ROOT_DIR/vnetUtils/helper
 
-./vecho "\e[1;34m$0 $*\e[0m"
-./vdo iptables -t filter -D FORWARD -j DROP
-./vdo iptables -t filter -D INPUT -j DROP
-./vdo iptables -t filter -D OUTPUT -j DROP
+$UTILS_DIR/vecho "\e[1;34m$0 $*\e[0m"
+$UTILS_DIR/vdo iptables -t filter -D FORWARD -j DROP
+$UTILS_DIR/vdo iptables -t filter -D INPUT -j DROP
+$UTILS_DIR/vdo iptables -t filter -D OUTPUT -j DROP
