@@ -1,0 +1,6 @@
+For the teacher or TA grading my lab, please check:
+- `write-tasks.md` for writing tasks.
+- `src/` for progamming tasks.
+- `tests/lab*.c` for codes to realize checkpoints.
+- `checkpoints/lab*.show.sh` for some scripts to show checkpoints.
+- `checkpoints/lab*.typescript` for the terminal outputs of the scripts above.

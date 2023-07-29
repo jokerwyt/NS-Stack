@@ -1,0 +1,46 @@
+Script started on 2023-07-29 14:10:01+08:00 [TERM="screen" TTY="/dev/pts/14" COLUMNS="181" LINES="37"]
+root@docker-desktop:/dmount/lab-netstack-premium# c ,/  ./checkpoints/sh  lab1_show.sh 
+[server 2023-07-29 14:10:11.068] [INFO] lab1.c:36 Available devices:
+[server 2023-07-29 14:10:11.068] [INFO] lab1.c:38 0: veth1-2
+[server 2023-07-29 14:10:11.068] [INFO] lab1.c:38 1: any
+[server 2023-07-29 14:10:11.068] [INFO] lab1.c:38 2: bluetooth-monitor
+[server 2023-07-29 14:10:11.068] [INFO] lab1.c:38 3: nflog
+[server 2023-07-29 14:10:11.068] [INFO] lab1.c:38 4: nfqueue
+[server 2023-07-29 14:10:11.068] [INFO] lab1.c:38 5: tunl0
+[server 2023-07-29 14:10:11.068] [INFO] lab1.c:38 6: ip6tnl0
+[server 2023-07-29 14:10:11.068] [INFO] lab1.c:38 7: lo
+[server 2023-07-29 14:10:11.077] [INFO] device.c:58 added device veth1-2, id=0, MAC=5a:f1:43:d9:1e:eb
+[server 2023-07-29 14:10:11.077] [INFO] lab1.c:53 server started. waiting for frame...
+[client 2023-07-29 14:10:12.095] [INFO] lab1.c:36 Available devices:
+[client 2023-07-29 14:10:12.095] [INFO] lab1.c:38 0: veth2-1
+[client 2023-07-29 14:10:12.095] [INFO] lab1.c:38 1: veth2-3
+[client 2023-07-29 14:10:12.095] [INFO] lab1.c:38 2: any
+[client 2023-07-29 14:10:12.095] [INFO] lab1.c:38 3: bluetooth-monitor
+[client 2023-07-29 14:10:12.095] [INFO] lab1.c:38 4: nflog
+[client 2023-07-29 14:10:12.095] [INFO] lab1.c:38 5: nfqueue
+[client 2023-07-29 14:10:12.095] [INFO] lab1.c:38 6: tunl0
+[client 2023-07-29 14:10:12.095] [INFO] lab1.c:38 7: ip6tnl0
+[client 2023-07-29 14:10:12.095] [INFO] lab1.c:38 8: lo
+[client 2023-07-29 14:10:12.109] [INFO] device.c:58 added device veth2-1, id=0, MAC=06:10:e6:47:50:a8
+[client 2023-07-29 14:10:12.109] [INFO] lab1.c:73 target MAC: 5a:f1:43:d9:1e:eb
+
+[client 2023-07-29 14:10:12.109] [DEBUG] packetio.c:52 a packet was sent to device veth2-1, frame_len=73, workload_len=55
+[server 2023-07-29 14:10:12.117] [INFO] lab1.c:14 Frame received. len=55, device=veth1-2
+[client 2023-07-29 14:10:13.110] [DEBUG] packetio.c:52 a packet was sent to device veth2-1, frame_len=73, workload_len=55
+[server 2023-07-29 14:10:13.141] [INFO] lab1.c:14 Frame received. len=55, device=veth1-2
+[client 2023-07-29 14:10:14.111] [DEBUG] packetio.c:52 a packet was sent to device veth2-1, frame_len=73, workload_len=55
+[server 2023-07-29 14:10:14.166] [INFO] lab1.c:14 Frame received. len=55, device=veth1-2
+[client 2023-07-29 14:10:15.112] [DEBUG] packetio.c:52 a packet was sent to device veth2-1, frame_len=73, workload_len=55
+[server 2023-07-29 14:10:15.189] [INFO] lab1.c:14 Frame received. len=55, device=veth1-2
+[client 2023-07-29 14:10:16.116] [DEBUG] packetio.c:52 a packet was sent to device veth2-1, frame_len=73, workload_len=55
+[server 2023-07-29 14:10:16.213] [INFO] lab1.c:14 Frame received. len=55, device=veth1-2
+[client 2023-07-29 14:10:17.121] [DEBUG] packetio.c:52 a packet was sent to device veth2-1, frame_len=73, workload_len=55
+[server 2023-07-29 14:10:17.237] [INFO] lab1.c:14 Frame received. len=55, device=veth1-2
+^CRecv SIGINT. clean up...
+^Croot@docker-desktop:/dmount/lab-netstack-premium# Terminated
+Terminated
+^C
+root@docker-desktop:/dmount/lab-netstack-premium# exit
+exit
+
+Script done on 2023-07-29 14:10:24+08:00 [COMMAND_EXIT_CODE="130"]
