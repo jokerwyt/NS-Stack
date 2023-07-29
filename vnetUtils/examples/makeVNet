@@ -1,4 +1,6 @@
 #!/bin/bash
+ROOT_DIR=$(dirname $(dirname $(dirname $(realpath $0))))
+UTILS_DIR=$ROOT_DIR/vnetUtils/helper
 
 # split [split] [line] [name1] ...
 split()
@@ -17,8 +19,6 @@ then
     exit 1
 fi
 
-cd ../helper
-
 read namePref
 
 read count
@@ -26,8 +26,8 @@ for (( i = 0; i <= count; i++ ));
 do
     eval ns=${namePref}ns$i
     eval ns$i=$ns
-    ./addNS $ns
-    ./execNS $ns ./enableForward
+    $UTILS_DIR/addNS $ns
+    $UTILS_DIR/execNS $ns $UTILS_DIR/enableForward
 done
 
 while read line
@@ -49,7 +49,7 @@ do
     eval prefix$i$j=$prefix
     eval prefix$j$i=$prefix
     
-    eval ./connectNS \$ns$i \$ns$j \$veth$i$j \$veth$j$i \$prefix$i$j
+    eval $UTILS_DIR/connectNS \$ns$i \$ns$j \$veth$i$j \$veth$j$i \$prefix$i$j
 done
 
 while read line
@@ -63,5 +63,5 @@ do
 
     suffix=$((i < j ? 2 : 1))
 
-    eval ./execNS \$ns$i ./setGRoute $target \$veth$i$j \$prefix$i$j.$suffix
+    eval $UTILS_DIR/execNS \$ns$i $UTILS_DIR/setGRoute $target \$veth$i$j \$prefix$i$j.$suffix
 done

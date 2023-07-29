@@ -24,7 +24,7 @@ int add_device(const char* device);
 int find_device(const char* device);
 
 // return NULL if id is invalid.
-const char* dev_mac(int id);
+const unsigned char* dev_mac(int id);
 
 // return 1 for valid and 0 for invalid.
 int is_valid_id(int id);
@@ -36,3 +36,5 @@ pcap_t* get_pcap_handle(int id);
 // n is the number of devices.
 // dont forget to free the list.
 char ** get_host_device_lists(int *n);
+
+char * get_device_name(int id);

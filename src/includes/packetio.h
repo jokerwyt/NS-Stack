@@ -18,7 +18,8 @@
 int send_frame(const void* buf, int len, int ethtype, const void* destmac, int id);
 
 /**
-* @brief Process a frame upon receiving it.
+* @brief Process a frame upon receiving it. 
+* `buf` points to the workload, instead of frame header.
 * @param buf Pointer to the frame.
 * @param len Length of the frame.
 * @param id ID of the device (returned by ‘addDevice‘) receiving current frame.

@@ -18,17 +18,10 @@ typedef enum {
     LOG_FATAL = 5
 } LogLevel;
 
+extern char *pnx_logger_perfix;
+
 // 获取日志级别名称
 const char* levelName(LogLevel level);
-
-// 设置环境变量LOG_LEVEL来动态修改日志级别
-void setLogLevelFromEnv();
-
-// 获取当前时间，精确到毫秒
-char* getCurrentTime();
-
-// 获取主机名
-char* getHostname();
 
 // 根据日志级别输出相应级别的日志信息
 void _mylog(LogLevel level, const char *file, int line, const char *format, ...);

@@ -1,5 +1,7 @@
 #include "logger.h"
 
+char *pnx_logger_perfix = "NA";
+
 // 获取日志级别名称
 const char* levelName(LogLevel level) {
     switch (level) {
@@ -22,10 +24,11 @@ const char* levelName(LogLevel level) {
 
 // 设置默认的日志级别为LOG_DEBUG
 static LogLevel logLevel = LOG_DEBUG;
+static int enableColor = 1;
 
 // 设置环境变量LOG_LEVEL来动态修改日志级别
-void setLogLevelFromEnv() {
-    char *env_level = getenv("LOG_LEVEL");
+static void setLogLevelFromEnv() {
+    char *env_level = getenv("PNX_LOG_LEVEL");
     if (env_level != NULL) {
         if (strcmp(env_level, "TRACE") == 0) {
             logLevel = LOG_TRACE;
@@ -46,8 +49,15 @@ void setLogLevelFromEnv() {
     }
 }
 
+static void setLogColorFromEnv() {
+    char *env_level = getenv("PNX_NOCOLOR");
+    if (env_level == NULL) {
+        enableColor = 1;
+    } else enableColor = 0;
+}
+
 // 获取当前时间，精确到毫秒
-char* getCurrentTime() {
+static char* getCurrentTime() {
     struct timeval tv;
     gettimeofday(&tv, NULL);
     time_t nowtime = tv.tv_sec;
@@ -58,18 +68,12 @@ char* getCurrentTime() {
     return strdup(buffer);
 }
 
-// 获取主机名
-char* getHostname() {
-    char hostname[256];
-    gethostname(hostname, sizeof(hostname));
-    return strdup(hostname);
-}
-
 // 根据日志级别输出相应级别的日志信息
 void _mylog(LogLevel level, const char *file, int line, const char *format, ...) {
     static int init = 0;
     if (!init) {
         setLogLevelFromEnv();
+        setLogColorFromEnv();
         init = 1;
     }
 
@@ -111,7 +115,14 @@ void _mylog(LogLevel level, const char *file, int line, const char *format, ...)
         vsnprintf(message, sizeof(message), format, args);
         va_end(args);
 
-        printf("[%s] %s[%s] %s:%d\033[0m %s\n",
-               getCurrentTime(), type_color, levelName(level), filename, line, message);
+        if (enableColor) {
+            printf("[%s %s] %s[%s] %s:%d\033[0m %s\n",
+                pnx_logger_perfix, getCurrentTime(), type_color, 
+                levelName(level), filename, line, message);
+        } else {
+            printf("[%s %s] [%s] %s:%d %s\n",
+                pnx_logger_perfix, getCurrentTime(), 
+                levelName(level), filename, line, message);
+        }
     }
 }

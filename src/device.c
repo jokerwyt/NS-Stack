@@ -9,9 +9,12 @@
 
 #define MAX_DEVICE_NUM 256
 
-static atomic_int device_count = ATOMIC_VAR_INIT(0);
+// it may share with multiple threads.
+static atomic_int device_count = ATOMIC_VAR_INIT(0); 
+
+// the following data is read-only. 
 static char *dev_name[MAX_DEVICE_NUM];
-static char dev_mac_addr[MAX_DEVICE_NUM][ETH_ALEN];
+static unsigned char dev_mac_addr[MAX_DEVICE_NUM][ETH_ALEN];
 static pcap_t *dev[MAX_DEVICE_NUM];
 
 int add_device(const char* device) {
@@ -51,6 +54,10 @@ int add_device(const char* device) {
     // ========== fire recv thread ==========
     recv_thread_go(new_id);
 
+    char buf[PNX_MAC_STR_LEN];
+    logInfo("added device %s, id=%d, MAC=%s", device, 
+        new_id, mac_to_str(dev_mac_addr[new_id], buf));
+
     return new_id;
 }
 
@@ -65,7 +72,7 @@ int find_device(const char* device) {
     return -1;
 }
 
-const char* dev_mac(int id) {
+const unsigned char* dev_mac(int id) {
     if (!is_valid_id(id)) {
         logError("try to get invalid device mac. id=%d", id);
         return NULL;
@@ -107,4 +114,11 @@ char ** get_host_device_lists(int *n) {
 
     pcap_freealldevs(alldevs);
     return ret;
+}
+
+char *get_device_name(int id) { 
+    if (!is_valid_id(id)) {
+        return NULL;
+    }
+    return dev_name[id];
 }
