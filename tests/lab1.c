@@ -11,7 +11,7 @@
 
 int frame_receive_callback(const void* workload, int len, int id) {
     (void)workload; // eliminate GCC warn
-    logInfo("Frame received. len=%d, device=%s", len, get_device_name(id));
+    logInfo("Frame received. len=%d, device=%s, content=%s", len, get_device_name(id), (char*) workload);
     return 1;
 }
 
@@ -76,7 +76,7 @@ int main(int argc, char **args) {
         while (1) {
             long long time = get_time_us();
             char msg[1000];
-            sprintf(msg, "hello world! %lld ============================ ", time);
+            sprintf(msg, "hello world! %lld", time);
             send_frame(msg, strlen(msg), ETHERTYPE_IP, (const void*)target_mac_bytes, id);
             sleep(1);
         }
