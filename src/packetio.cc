@@ -4,12 +4,9 @@
 
 #include <pcap.h>
 #include <pthread.h>
-#include <stdatomic.h>
+#include <atomic>
 
-// it is actually a FrameReceiveCallback.
-// I dont want to use mutex, for simplicity.
-#define NONE 0
-static atomic_size_t recv_callback = ATOMIC_VAR_INIT(NONE);
+static std::atomic<FrameReceiveCallback> recv_callback{nullptr};
 
 int send_frame(const void* buf, int len, int ethtype, const void* destmac, int id) {
     static char frame[ETHER_MAX_LEN];
@@ -54,37 +51,30 @@ int send_frame(const void* buf, int len, int ethtype, const void* destmac, int i
     return 0; // 0 for success
 }
 
-
-
 void callback_wrapper_(
-    u_char *user, // user-specific data, used as dev_id 
+    u_char *dev_id, // user-specific data, used as dev_id 
     const struct pcap_pkthdr *h, 
     const u_char * bytes) {
 
-    int dev_id = -1;
-    NO_WARN_CAST(int, dev_id, user);
-
-    // get the work load
-    const u_char *workload = bytes + ETH_HLEN;
+    if (h->caplen != h->len) {
+        logWarning("recv strange frame. caplen=%u, len=%u", h->caplen, h->len);
+    }
 
     // * @param buf Pointer to the frame.
     // * @param len Length of the frame.
     // * @param id ID of the device (returned by ‘addDevice‘) receiving current frame.
-    size_t loadout = atomic_load(&recv_callback);
-    if (loadout != NONE)
-        ((FrameReceiveCallback)(loadout))(workload, h->caplen - ETH_HLEN - ETHER_CRC_LEN, dev_id);
+    auto callback = recv_callback.load();
+    if (callback)
+        callback(bytes, h->caplen, PNX_CAST(int, dev_id));
 }
 
 pcap_handler callback_wrapper = &callback_wrapper_;
 
-static void* frame_handler_thread(void* dev_id__) {
-    int dev_id = 0;
-    NO_WARN_CAST(int, dev_id, dev_id__);
-
-    pcap_t *dev = get_pcap_handle(dev_id);
+static void* frame_handler_thread(void* dev_id) {
+    pcap_t *dev = get_pcap_handle(PNX_CAST(int, dev_id));
     while (1) {
         pcap_loop(dev, -1 /* infinity */, 
-            callback_wrapper, dev_id__);
+            callback_wrapper, (u_char*) dev_id);
         logWarning("device %d frame handler pcap_loop exit. try again...", dev_id);
     }
     return NULL;
@@ -92,16 +82,14 @@ static void* frame_handler_thread(void* dev_id__) {
 
 
 int set_frame_receive_callback(FrameReceiveCallback callback) {
-    atomic_store(&recv_callback, (size_t) callback);
+    recv_callback.store(callback);
     return 0;
 }
 
 int recv_thread_go(int device_id) {
     pthread_t thr;
-    void * user_specific = NULL;
-    NO_WARN_CAST(void*, user_specific, device_id);
 
-    if (pthread_create(&thr, NULL, frame_handler_thread, user_specific) != 0) {
+    if (pthread_create(&thr, NULL, frame_handler_thread, PNX_CAST(void*, device_id)) != 0) {
         logFatal("create recv thread fail. device_id=%d", device_id);
         exit(-1);
     }

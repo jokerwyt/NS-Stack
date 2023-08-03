@@ -8,19 +8,7 @@
 #include <unistd.h>
 #include <string.h>
 
-
-int frame_receive_callback(const void* workload, int len, int id) {
-    (void)workload; // eliminate GCC warn
-    logInfo("Frame received. len=%d, device=%s, content=%s", len, get_device_name(id), (char*) workload);
-    return 1;
-}
-
-FrameReceiveCallback callback = &frame_receive_callback;
-
 int main(int argc, char **args) {
-    // print all available devices
-
-
     // check if there is an target MAC to specify client and server.
     if (argc > 2) {
         logError("Usage for server: %s", args[0]);
@@ -51,7 +39,14 @@ int main(int argc, char **args) {
 
         // set callback
         logInfo("server started. waiting for frame...");
-        set_frame_receive_callback(callback);
+
+        auto frame_receive_callback = [](const void* workload, int len, int id) {
+            (void)workload; // eliminate GCC warn
+            logInfo("Frame received. len=%d, device=%s, content=%s", len, get_device_name(id), (char*) workload);
+            return 1;
+        };
+
+        set_frame_receive_callback(frame_receive_callback);
         sleep(10086);
     } else {
         // client case

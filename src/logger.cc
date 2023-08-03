@@ -1,6 +1,6 @@
 #include "logger.h"
 
-char *pnx_logger_perfix = "NA";
+std::string pnx_logger_perfix = "NA";
 
 // 获取日志级别名称
 const char* levelName(LogLevel level) {
@@ -117,11 +117,11 @@ void _mylog(LogLevel level, const char *file, int line, const char *format, ...)
 
         if (enableColor) {
             printf("[%s %s] %s[%s] %s:%d\033[0m %s\n",
-                pnx_logger_perfix, getCurrentTime(), type_color, 
+                pnx_logger_perfix.c_str(), getCurrentTime(), type_color, 
                 levelName(level), filename, line, message);
         } else {
             printf("[%s %s] [%s] %s:%d %s\n",
-                pnx_logger_perfix, getCurrentTime(), 
+                pnx_logger_perfix.c_str(), getCurrentTime(), 
                 levelName(level), filename, line, message);
         }
     }

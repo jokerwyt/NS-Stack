@@ -4,6 +4,7 @@
 * @brief Library supporting sending/receiving Ethernet II frames. */
 
 #include <netinet/ether.h>
+#include <functional>
 
 /**
 * @brief Encapsulate some data into an Ethernet II frame and send it. 

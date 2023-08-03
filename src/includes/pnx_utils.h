@@ -1,17 +1,9 @@
 #pragma once
 
-#define NO_WARN_CAST(type, dst, src)                                \
-    _Pragma("GCC diagnostic push")                                  \
-    _Pragma("GCC diagnostic ignored \"-Wpointer-to-int-cast\"")     \
-    _Pragma("GCC diagnostic ignored \"-Wint-to-pointer-cast\"")     \
-        (dst) = ((type) (src));                                     \
-    _Pragma("GCC diagnostic pop")
-
-
+#define PNX_CAST(type, src) (*(type*) &(src))
 
 // get time in nanosecond
 long long get_time_ns();
-
 
 // get time in microsecond
 long long get_time_us();

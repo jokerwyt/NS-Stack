@@ -10,7 +10,7 @@
 #define MAX_DEVICE_NUM 256
 
 // it may share with multiple threads.
-static atomic_int device_count = ATOMIC_VAR_INIT(0); 
+static std::atomic<int> device_count{0}; 
 
 // the following data is read-only. 
 static char *dev_name[MAX_DEVICE_NUM];
@@ -106,7 +106,7 @@ char ** get_host_device_lists(int *n) {
         (*n)++;        
     }
 
-    char **ret = malloc(sizeof(char*) * (*n));
+    char **ret = (char**) malloc(sizeof(char*) * (*n));
     int i = 0;
     for (pcap_if_t *dev = alldevs; dev != NULL; dev = dev->next) {
         ret[i++] = strdup(dev->name);

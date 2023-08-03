@@ -1,5 +1,5 @@
-add_executable(logger_test logger_test.c)
-add_executable(lab1 lab1.c)
+add_executable(logger_test logger_test.cc)
+add_executable(lab1 lab1.cc)
 
 
 

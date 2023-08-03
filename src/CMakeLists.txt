@@ -1,6 +1,6 @@
 add_library(Pnx STATIC
-    device.c
-    packetio.c
-    logger.c
-    pnx_utils.c
+    device.cc
+    packetio.cc
+    logger.cc
+    pnx_utils.cc
 )

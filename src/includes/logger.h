@@ -1,8 +1,9 @@
 #pragma once
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <string>
 #include <sys/time.h>
 #include <unistd.h>
 #include <time.h>
@@ -18,7 +19,7 @@ typedef enum {
     LOG_FATAL = 5
 } LogLevel;
 
-extern char *pnx_logger_perfix;
+extern std::string pnx_logger_perfix;
 
 // 获取日志级别名称
 const char* levelName(LogLevel level);
