@@ -1,3 +1,5 @@
+#pragma once
+
 /**
 * @file ip.h
 * @brief Library supporting sending/receiving IP packets encapsulated

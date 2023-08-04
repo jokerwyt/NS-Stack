@@ -8,7 +8,7 @@
 
 static std::atomic<FrameReceiveCallback> recv_callback{nullptr};
 
-int send_frame(const void* buf, int len, int ethtype, const void* destmac, int id) {
+int send_frame(const void* buf, int len, int ethtype, const ether_addr* destmac, int id) {
     static char frame[ETHER_MAX_LEN];
 
     struct ether_header *eth_header;
@@ -28,8 +28,8 @@ int send_frame(const void* buf, int len, int ethtype, const void* destmac, int i
     eth_header = (struct ether_header*) frame;
 
     memcpy(eth_header->ether_shost, dev_mac(id), ETH_ALEN);
-    memcpy(eth_header->ether_dhost, destmac, ETH_ALEN);
-    eth_header->ether_type = ethtype;
+    memcpy(eth_header->ether_dhost, destmac->ether_addr_octet, ETH_ALEN);
+    eth_header->ether_type = htons(ethtype);
 
     memcpy(frame + ETH_HLEN, buf, len);
     size_t padding = 0;

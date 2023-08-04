@@ -14,7 +14,9 @@ static std::atomic<int> device_count{0};
 
 // the following data is read-only. 
 static char *dev_name[MAX_DEVICE_NUM];
-static unsigned char dev_mac_addr[MAX_DEVICE_NUM][ETH_ALEN];
+static struct ether_addr dev_mac_addr[MAX_DEVICE_NUM];
+static struct in_addr dev_ip_addr[MAX_DEVICE_NUM];
+static struct in_addr dev_mask_addr[MAX_DEVICE_NUM];
 static pcap_t *dev[MAX_DEVICE_NUM];
 
 int add_device(const char* device) {
@@ -32,8 +34,24 @@ int add_device(const char* device) {
         close(sockfd);
         return -1;
     }
+    memcpy(dev_mac_addr[device_count].ether_addr_octet, ifr.ifr_hwaddr.sa_data, ETH_ALEN);
+
+    // ========== query ip ==========
+    if (ioctl(sockfd, SIOCGIFADDR, &ifr) < 0) {
+        logError("can not get device ip addr. errmsg=%s", strerror(errno));
+        close(sockfd);
+        return -1;
+    }
+    memcpy(&dev_ip_addr[device_count], &((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr, sizeof(in_addr));
+
+    // ========== query subnet mask ==========
+    if (ioctl(sockfd, SIOCGIFNETMASK, &ifr) < 0) {
+        logError("can not get device subnet mask. errmsg=%s", strerror(errno));
+        close(sockfd);
+        return -1;
+    }
+    memcpy(&dev_mask_addr[device_count], &((struct sockaddr_in *)&ifr.ifr_netmask)->sin_addr, sizeof(in_addr));
     close(sockfd);
-    memcpy(dev_mac_addr[device_count], ifr.ifr_hwaddr.sa_data, ETH_ALEN);
 
     // ========== pcap open it ==========
     char errbuf[PCAP_ERRBUF_SIZE];
@@ -56,7 +74,7 @@ int add_device(const char* device) {
 
     char buf[PNX_MAC_STR_LEN];
     logInfo("added device %s, id=%d, MAC=%s", device, 
-        new_id, mac_to_str(dev_mac_addr[new_id], buf));
+        new_id, mac_to_str(dev_mac_addr[new_id].ether_addr_octet, buf));
 
     return new_id;
 }
@@ -72,12 +90,20 @@ int find_device(const char* device) {
     return -1;
 }
 
-const unsigned char* dev_mac(int id) {
+const struct ether_addr *dev_mac(int id) {
     if (!is_valid_id(id)) {
         logError("try to get invalid device mac. id=%d", id);
         return NULL;
     }
-    return dev_mac_addr[id];
+    return &dev_mac_addr[id];
+}
+
+const in_addr *dev_ip(int id) {
+    if (!is_valid_id(id)) {
+        logError("try to get invalid device ip. id=%d", id);
+        return nullptr;
+    }
+    return &dev_ip_addr[id];
 }
 
 int is_valid_id(int id) {

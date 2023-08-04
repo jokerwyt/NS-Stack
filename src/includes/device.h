@@ -23,8 +23,10 @@ int add_device(const char* device);
 */
 int find_device(const char* device);
 
-// return NULL if id is invalid.
-const unsigned char* dev_mac(int id);
+// return nullptr or 0 if id is invalid.
+const struct ether_addr* dev_mac(int id);
+const struct in_addr* dev_ip(int id);
+const struct in_addr* dev_mask(int id);
 
 // return 1 for valid and 0 for invalid.
 int is_valid_id(int id);

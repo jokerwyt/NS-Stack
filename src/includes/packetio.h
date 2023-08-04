@@ -16,7 +16,7 @@
 * @return 0 on success, -1 on error.
 * @see addDevice 
 */
-int send_frame(const void* buf, int len, int ethtype, const void* destmac, int id);
+int send_frame(const void* buf, int len, int ethtype, const ether_addr* destmac, int id);
 
 /**
 * @brief Process a frame upon receiving it. 
@@ -50,3 +50,6 @@ int set_frame_receive_callback(FrameReceiveCallback callback);
 // recv_thread_go -> frame_handler_thread -> pcap_loop 
 // -> callback_wrapper -> user-given frame callback
 int recv_thread_go(int device_id);
+
+
+const struct ether_addr kBroadcast = {{0xff, 0xff, 0xff, 0xff, 0xff, 0xff}};

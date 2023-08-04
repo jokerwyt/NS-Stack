@@ -60,19 +60,23 @@ int main(int argc, char **args) {
         }
 
         // keep injecting frame of the given target MAC
-        char *target_mac = args[1];
-        unsigned char target_mac_bytes[6];
-        str_to_mac(target_mac, target_mac_bytes);
+        char *target_mac_str = args[1];
+        struct ether_addr target_mac;
+        // cast target_mac to ether_addr
+        if (ether_aton_r(target_mac_str, &target_mac) == nullptr) {
+            logError("Invalid MAC address format");
+            return -1;
+        }
 
         //translate mac str into 6-byte array
-        logInfo("target MAC: %s\n", target_mac);
+        logInfo("target MAC: %s\n", target_mac_str);
 
         // make the frame larger than the minimum length.
         while (1) {
             long long time = get_time_us();
             char msg[1000];
             sprintf(msg, "hello world! %lld", time);
-            send_frame(msg, strlen(msg), ETHERTYPE_IP, (const void*)target_mac_bytes, id);
+            send_frame(msg, strlen(msg), ETHERTYPE_IP, &target_mac, id);
             sleep(1);
         }
     }
