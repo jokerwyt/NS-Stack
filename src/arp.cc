@@ -7,6 +7,7 @@
 #include "packetio.h"
 #include "device.h"
 #include "logger.h"
+#include "pnx_utils.h"
 
 struct InAddrHash {
     std::size_t operator()(const in_addr& addr) const {
@@ -42,7 +43,7 @@ int ARPQuery(int dev_id, const in_addr target_ip, ether_addr* target_mac) {
             [&]() { return cache_.count(target_ip); });
         
         if (timeout) {
-            logError("ARP request timeout. dev_id=%d, for ip %s", dev_id, inet_ntoa(target_ip));
+            logError("ARP request timeout. dev_id=%d, for ip %s", dev_id, inet_ntoa_safe(target_ip));
             return -1;
         }
         
@@ -84,8 +85,8 @@ int ARPQuery(int dev_id, const in_addr target_ip, ether_addr* target_mac) {
     });
 
     if (timeout) {
-        logError("ARP request timeout. dev_id=%d, for ip %s", dev_id, inet_ntoa(target_ip));
-        return result;
+        logError("ARP request timeout. dev_id=%d, for ip %s", dev_id, inet_ntoa_safe(target_ip));
+        return -1;
     }
 
     *target_mac = cache_[target_ip];

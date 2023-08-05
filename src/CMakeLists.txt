@@ -1,7 +1,7 @@
 add_library(Pnx STATIC
     device.cc
     packetio.cc
-    ip.cc
+    pnx_ip.cc
     arp.cc
     routing.cc
     logger.cc

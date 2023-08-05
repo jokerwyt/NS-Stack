@@ -1,6 +1,8 @@
 #pragma once
 
 #include <arpa/inet.h>
+#include <memory>
+
 #define PNX_CAST(type, src) (*(type*) &(src))
 
 // get time in nanosecond
@@ -19,3 +21,6 @@ unsigned char* str_to_mac(const char str[6], unsigned char* mac);
 struct in_addr subnet_len_to_mask(int subnet_len);
 
 bool subnet_match(const struct in_addr ip1, const struct in_addr ip2, const struct in_addr mask);
+
+
+std::unique_ptr<const char[]> inet_ntoa_safe(const struct in_addr in);

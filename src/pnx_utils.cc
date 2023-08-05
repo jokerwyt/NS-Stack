@@ -40,3 +40,9 @@ in_addr subnet_len_to_mask(int subnet_len) {
 bool subnet_match(const in_addr ip1, const in_addr ip2, const in_addr mask) {
     return (ip1.s_addr & mask.s_addr) == (ip2.s_addr & mask.s_addr);
 }
+
+std::unique_ptr<const char[]> inet_ntoa_safe(const in_addr in) {
+    char* buf = new char[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &in, buf, INET_ADDRSTRLEN);
+    return std::unique_ptr<const char[]>(buf);
+}

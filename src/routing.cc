@@ -22,6 +22,8 @@ public:
         this->device_id = device_id;
     }
 
+    virtual ~RoutingEntry() {}
+
     bool operator<(const RoutingEntry &rhs) const {
         // bigger mask means more specific.
         return mask.s_addr < rhs.mask.s_addr;
@@ -42,10 +44,22 @@ public:
 };
 
 #include <vector>
+
+
+static
 std::vector<std::shared_ptr<RoutingEntry>> routing_table_;
+
+
+#include <mutex>
+
+static 
+std::mutex mtx_; // lock of the routing table
+
 
 static void route_table_init() {
     // initialize from OS routing table.
+
+    std::unique_lock<std::mutex> lock(mtx_);
 
     // get the OS routing table through popen
     FILE *fp = popen("ip route", "r");
@@ -103,12 +117,12 @@ static void route_table_init() {
             if (strcmp(ip_str, "default") == 0) {
                 // it is a default routing entry.
                 // set the ip_str to "0.0.0.0/0"
-                strcpy(ip_str, "0.0.0.0/0");
+                strcpy(ip_str, "0.0.0.0");
                 subnet_len = 0;
             } else {
                 // it is not a default routing entry.
                 // parse the ip address and mask.
-                sscanf(ip_str, "%s/%d", ip_str, subnet_len);
+                sscanf(ip_str, "%s/%d", ip_str, &subnet_len);
             }
 
             inet_aton(ip_str, &ip);
@@ -137,6 +151,8 @@ std::pair<int, in_addr> get_next_hop(const in_addr dest) {
     // find the routing entry with the longest prefix match.
     // i.e. from the tail of the routing table.
 
+
+    std::unique_lock<std::mutex> lock(mtx_);
     for (auto it = routing_table_.rbegin(); it != routing_table_.rend(); it++) {
         auto entry = *it;
 
@@ -158,4 +174,32 @@ std::pair<int, in_addr> get_next_hop(const in_addr dest) {
         }
     }
     return { -1, {0} };
+}
+
+int add_routing_entry(const in_addr dest, const in_addr mask,
+                      const struct in_addr next_hop, const char *device) {
+
+    // check if the device exists.
+    int id = find_device(device);
+    if (id == -1) {
+        logWarning("cannot add routing entry: device %s not found", device);
+        return -1;
+    }
+
+    std::unique_lock<std::mutex> lock(mtx_);
+
+    // check if the routing entry already exists.
+    for (auto entry : routing_table_) {
+        if (entry->device_id == id && entry->dest.s_addr == dest.s_addr && entry->mask.s_addr == mask.s_addr) {
+            logError("conflict routing entry: device %s, dest %s, mask %s", 
+                device, inet_ntoa_safe(dest), inet_ntoa_safe(mask));
+            return -1;
+        }
+    }
+
+    // add the routing entry.
+    routing_table_.push_back(std::make_shared<RoutingEntry>(dest, mask, next_hop, id));
+    std::sort(routing_table_.begin(), routing_table_.end());
+
+    return 0;
 }
