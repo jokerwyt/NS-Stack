@@ -1,15 +1,17 @@
 #include "common.h"
 #include "packetio.h"
 #include "device.h"
+#include "pnx_ip.h"
+#include "arp.h"
 
 #include <pcap.h>
-#include <pthread.h>
 #include <atomic>
+#include <thread>
 
 static std::atomic<FrameReceiveCallback> recv_callback{nullptr};
 
 int send_frame(const void* buf, int len, int ethtype, const ether_addr* destmac, int id) {
-    static char frame[ETHER_MAX_LEN];
+    char frame[ETHER_MAX_LEN];
 
     struct ether_header *eth_header;
     assert(ETH_HLEN == sizeof(struct ether_header));
@@ -51,8 +53,8 @@ int send_frame(const void* buf, int len, int ethtype, const ether_addr* destmac,
     return 0; // 0 for success
 }
 
-void callback_wrapper_(
-    u_char *dev_id, // user-specific data, used as dev_id 
+static void frame_handler(
+    u_char *_dev_id, // user-specific data, used as dev_id 
     const struct pcap_pkthdr *h, 
     const u_char * bytes) {
 
@@ -60,26 +62,36 @@ void callback_wrapper_(
         logWarning("recv strange frame. caplen=%u, len=%u", h->caplen, h->len);
     }
 
+    struct ether_header *eth_header = (struct ether_header*) bytes;
+
+
+    int dev_id = *(int*) _dev_id;
+
+    // ARP
+    if (ntohs(eth_header->ether_type) == ETHERTYPE_ARP) {
+        if (ARPHandler(dev_id, (const char *) bytes) != 0) {
+            logWarning("upper layer fails to handle ARP packet");
+        }
+    }
+
+    // IP
+    if (ntohs(eth_header->ether_type) == ETHERTYPE_IP) {
+        if (ip_packet_handler(bytes + ETH_HLEN, h->caplen - ETH_HLEN) != 0) {
+            logWarning("upper layer fails to handle IP packet");
+        }
+    }
+
     // * @param buf Pointer to the frame.
     // * @param len Length of the frame.
     // * @param id ID of the device (returned by ‘addDevice‘) receiving current frame.
+
+    logWarning("unknown frame, give it to user callback");
     auto callback = recv_callback.load();
     if (callback)
-        callback(bytes, h->caplen, PNX_CAST(int, dev_id));
+        callback(bytes, h->caplen, dev_id);
 }
 
-pcap_handler callback_wrapper = &callback_wrapper_;
-
-static void* frame_handler_thread(void* dev_id) {
-    pcap_t *dev = get_pcap_handle(PNX_CAST(int, dev_id));
-    while (1) {
-        pcap_loop(dev, -1 /* infinity */, 
-            callback_wrapper, (u_char*) dev_id);
-        logWarning("device %d frame handler pcap_loop exit. try again...", dev_id);
-    }
-    return NULL;
-}
-
+static pcap_handler callback_wrapper = &frame_handler;
 
 int set_frame_receive_callback(FrameReceiveCallback callback) {
     recv_callback.store(callback);
@@ -87,11 +99,14 @@ int set_frame_receive_callback(FrameReceiveCallback callback) {
 }
 
 int recv_thread_go(int device_id) {
-    pthread_t thr;
-
-    if (pthread_create(&thr, NULL, frame_handler_thread, PNX_CAST(void*, device_id)) != 0) {
-        logFatal("create recv thread fail. device_id=%d", device_id);
-        exit(-1);
-    }
+    std::thread recv = std::thread([device_id]() {
+        pcap_t *dev = get_pcap_handle(device_id);
+        while (1) {
+            pcap_loop(dev, -1 /* infinity */, 
+                callback_wrapper, (u_char*) &device_id);
+            logWarning("device %d frame handler pcap_loop exit. try again...", device_id);
+        }
+    });
+    recv.detach();
     return 0;
 }

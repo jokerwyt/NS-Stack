@@ -27,7 +27,8 @@ static std::unordered_map<in_addr, ether_addr, InAddrHash> cache_;
 static std::unordered_map<in_addr, std::shared_ptr<std::condition_variable>, 
     InAddrHash> outstanding_requests_;
 
-static const int kARPTimeout = 50; // milliseconds
+// static const int kARPTimeout = 50; // milliseconds
+static const int kARPTimeout = 50000000; // milliseconds
 
 int ARPQuery(int dev_id, const in_addr target_ip, ether_addr* target_mac) {
     std::unique_lock<std::mutex> lock(mtx_);
@@ -39,11 +40,11 @@ int ARPQuery(int dev_id, const in_addr target_ip, ether_addr* target_mac) {
 
     if (outstanding_requests_.find(target_ip) != outstanding_requests_.end()) {
         auto cv = outstanding_requests_[target_ip];
-        bool timeout = cv->wait_for(lock, std::chrono::milliseconds(kARPTimeout),
+        bool succ = cv->wait_for(lock, std::chrono::milliseconds(kARPTimeout),
             [&]() { return cache_.count(target_ip); });
         
-        if (timeout) {
-            logError("ARP request timeout. dev_id=%d, for ip %s", dev_id, inet_ntoa_safe(target_ip));
+        if (!succ) {
+            logError("ARP request timeout. dev_id=%d, for ip %s", dev_id, inet_ntoa_safe(target_ip).get());
             return -1;
         }
         
@@ -53,7 +54,7 @@ int ARPQuery(int dev_id, const in_addr target_ip, ether_addr* target_mac) {
 
     // send ARP request
     // construct it first
-    static char frame[ETHER_MAX_LEN];
+    char frame[ETHER_MAX_LEN];
     struct ether_arp *arp = (struct ether_arp*)frame;
     struct arphdr *arp_header = &arp->ea_hdr;
 
@@ -80,12 +81,12 @@ int ARPQuery(int dev_id, const in_addr target_ip, ether_addr* target_mac) {
     outstanding_requests_[target_ip] = cv;
 
     // give away the lock and wait the cv for kARPTimeout milliseconds
-    bool timeout = cv->wait_for(lock, std::chrono::milliseconds(kARPTimeout), [&]() {
+    bool succ = cv->wait_for(lock, std::chrono::milliseconds(kARPTimeout), [&]() {
         return cache_.count(target_ip);
     });
 
-    if (timeout) {
-        logError("ARP request timeout. dev_id=%d, for ip %s", dev_id, inet_ntoa_safe(target_ip));
+    if (!succ) {
+        logError("ARP request timeout. dev_id=%d, for ip %s", dev_id, inet_ntoa_safe(target_ip).get());
         return -1;
     }
 
@@ -106,6 +107,12 @@ int ARPHandler(int dev_id, const char* ether_frame) {
         memcpy(&target_mac, arp->arp_sha, ETH_ALEN);
         cache_.emplace(target_ip, target_mac);
 
+        if (outstanding_requests_.find(target_ip) == outstanding_requests_.end()) {
+            logWarning("recv an ARP reply that is not requested. dev_id=%d, for ip %s", 
+                dev_id, inet_ntoa_safe(target_ip).get());
+            return -1;
+        }
+
         auto cv = outstanding_requests_.extract(target_ip).mapped();
         cv->notify_all();
         return 0;
@@ -114,7 +121,7 @@ int ARPHandler(int dev_id, const char* ether_frame) {
         
         // reply back the ARP request
         // construct it
-        static char eth_payload[ETHER_MAX_LEN];
+        char eth_payload[ETHER_MAX_LEN];
         struct ether_arp *arp_reply = (struct ether_arp*)eth_payload;
         struct arphdr *arp_header = &arp_reply->ea_hdr;
 

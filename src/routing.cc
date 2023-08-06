@@ -81,17 +81,22 @@ static void route_table_init() {
         if (strstr(buf, "scope link") != NULL) {
             // it is a scope link.
             // parse the ip address and device name.
-            char ip_str[1024];
-            char device_name[1024];
+            char ipsubnet_str[128];
+            char ipstr[128];
+            char device_name[128];
             int subnet_len;
-            sscanf(buf, "%s dev %s scope link", ip_str, device_name);
+            sscanf(buf, "%s dev %s scope link", ipsubnet_str, device_name);
 
             // parse the ip address.
             // ip_str looks like 10.100.4.0/24
             // get ip and subnet mask.
             in_addr ip;
-            sscanf(ip_str, "%s/%d", ip_str, &subnet_len);
-            inet_aton(ip_str, &ip);
+
+            // get ipstr and subnet_len
+            split_ip_subnet(ipsubnet_str, ipstr, &subnet_len);
+
+
+            inet_aton(ipstr, &ip);
 
             // add the routing entry to the routing table.
             int id = find_device(device_name);
@@ -103,10 +108,11 @@ static void route_table_init() {
         } else {
             // it is not a scope link.
             // parse the ip address, mask, next hop and device name.
-            char ip_str[1024];
-            char next_hop_str[1024];
-            char device_name[1024];
-            sscanf(buf, "%s via %s dev %s", ip_str, next_hop_str, device_name);
+            char ipsubnet_str[128];
+            char ipstr[128];
+            char next_hop_str[128];
+            char device_name[128];
+            sscanf(buf, "%s via %s dev %s", ipsubnet_str, next_hop_str, device_name);
 
             // parse the ip address, mask and next hop.
             in_addr ip;
@@ -114,18 +120,18 @@ static void route_table_init() {
             in_addr next_hop;
 
             // check if it is a default routing entry.
-            if (strcmp(ip_str, "default") == 0) {
+            if (strcmp(ipsubnet_str, "default") == 0) {
                 // it is a default routing entry.
                 // set the ip_str to "0.0.0.0/0"
-                strcpy(ip_str, "0.0.0.0");
+                strcpy(ipstr, "0.0.0.0");
                 subnet_len = 0;
             } else {
                 // it is not a default routing entry.
                 // parse the ip address and mask.
-                sscanf(ip_str, "%s/%d", ip_str, &subnet_len);
+                split_ip_subnet(ipsubnet_str, ipstr, &subnet_len);
             }
 
-            inet_aton(ip_str, &ip);
+            inet_aton(ipstr, &ip);
             inet_aton(next_hop_str, &next_hop);
 
             // add the routing entry to the routing table.
@@ -139,6 +145,15 @@ static void route_table_init() {
     }
 
     std::sort(routing_table_.begin(), routing_table_.end());
+
+    // print the routing table.
+    logDebug("routing table:");
+    for (auto entry : routing_table_) {
+        logDebug("dest=%s, mask=%s, next_hop=%s, device=%s, is_direct=%d", 
+            inet_ntoa_safe(entry->dest).get(), inet_ntoa_safe(entry->mask).get(), 
+            inet_ntoa_safe(entry->next_hop).get(), get_device_name(entry->device_id),
+            std::dynamic_pointer_cast<DirectRoutingEntry>(entry) != nullptr);
+    }
 }
 
 std::pair<int, in_addr> get_next_hop(const in_addr dest) {

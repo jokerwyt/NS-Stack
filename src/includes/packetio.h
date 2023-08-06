@@ -45,10 +45,6 @@ int set_frame_receive_callback(FrameReceiveCallback callback);
 
 // create a new thread for this device's packet receiving.
 // must success, or fatal termination. always return 0.
-// 
-// call path:
-// recv_thread_go -> frame_handler_thread -> pcap_loop 
-// -> callback_wrapper -> user-given frame callback
 int recv_thread_go(int device_id);
 
 

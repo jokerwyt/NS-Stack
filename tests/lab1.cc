@@ -8,6 +8,8 @@
 #include <unistd.h>
 #include <string.h>
 
+// the server works in NS1 and the client works in NS2.
+
 int main(int argc, char **args) {
     // check if there is an target MAC to specify client and server.
     if (argc > 2) {

@@ -10,32 +10,38 @@
 #include <arpa/inet.h>
 
 // calc the checksum of the ip header without modifying the ip header.
-static int calc_iphd_checksum(struct iphdr *ip_header) {
+static uint16_t calc_iphd_checksum(struct iphdr *ip_header) {
     // calc the checksum of the ip header using the RFC specified algorithm.
     // https://tools.ietf.org/html/rfc1071
 
     // first set the checksum field to 0
-
     auto old_check = ip_header->check;
 
     ip_header->check = 0;
 
-    // then calc the checksum
+    /* Compute Internet Checksum for "count" bytes
+    *         beginning at location "addr".
+    */
     uint32_t sum = 0;
-    uint16_t *p = (uint16_t*)ip_header;
-    for (int i = 0; i < ip_header->ihl * 2; i++) {
-        sum += *p++;
+
+    int count = ip_header->ihl * 4;
+    uint16_t * addr = (uint16_t *) ip_header;
+    while( count > 1 )  {
+        /*  This is the inner loop */
+        sum += * (uint16_t*) addr++;
+        count -= 2;
     }
 
-    // add the carry
-    while (sum >> 16) {
-        sum = (sum >> 16) + (sum & 0xffff);
-    }
+    /*  Add left-over byte, if any */
+    if ( count > 0 )
+        sum += * (unsigned char *) addr;
 
-    // set the checksum field
+    /*  Fold 32-bit sum to 16 bits */
+    while (sum>>16)
+        sum = (sum & 0xffff) + (sum >> 16);
+
     ip_header->check = old_check;
-
-    return ~ (PNX_CAST(uint16_t, sum));
+    return ~(uint16_t)sum;
 }
 
 static bool verify_iphd_checksum(struct iphdr *ip_header) {
@@ -53,19 +59,19 @@ int sendIPPacket(const in_addr src, const in_addr dest, int proto,
     int dev_id = routing.first;
     in_addr next_hop_ip = routing.second;
     if (dev_id == -1) {
-        logWarning("cannot find next hop for %s", inet_ntoa_safe(dest));
+        logWarning("cannot find next hop for %s", inet_ntoa_safe(dest).get());
         return -1;
     }
 
     // ARP query
     struct ether_addr dest_mac;
     if (ARPQuery(dev_id, next_hop_ip, &dest_mac) != 0) {
-        logWarning("cannot find ARP entry for %s", inet_ntoa_safe(next_hop_ip));
+        logWarning("cannot find ARP entry for %s", inet_ntoa_safe(next_hop_ip).get());
         return -1;
     }
 
     // construct the ethernet payload. i.e. the IP packet.
-    static char packet[ETHER_MAX_LEN];
+    char packet[ETHER_MAX_LEN];
 
     if ((size_t)len > ETHER_MAX_LEN - sizeof(struct iphdr)) {
         logError("IP Packet too large, fragmentation not supported yet.");
@@ -93,7 +99,7 @@ int sendIPPacket(const in_addr src, const in_addr dest, int proto,
     memcpy(packet + sizeof(struct iphdr), buf, len);
 
     // send the packet
-    return send_frame(packet, ip_header->tot_len, ETHERTYPE_IP, &dest_mac, dev_id);
+    return send_frame(packet, ntohs(ip_header->tot_len), ETHERTYPE_IP, &dest_mac, dev_id);
 }
 
 
@@ -139,10 +145,12 @@ int ip_packet_handler(const void *buf, int len) {
         }
 
         // verify the protocol
-        if (ip_header->protocol != IPPROTO_ICMP && ip_header->protocol != IPPROTO_TCP && ip_header->protocol != IPPROTO_UDP) {
-            logWarning("IP protocol error");
-            return -1;
-        }
+        // if (ip_header->protocol != IPPROTO_ICMP && 
+        //     ip_header->protocol != IPPROTO_TCP && 
+        //     ip_header->protocol != IPPROTO_UDP) {
+        //     logWarning("IP protocol error");
+        //     return -1;
+        // }
     }
 
     // check if routing needed.
@@ -154,7 +162,7 @@ int ip_packet_handler(const void *buf, int len) {
     auto next_hop_ip = rt.second;
 
     if (dev_id == -1) {
-        logWarning("IP forward: cannot find next hop for %s", inet_ntoa_safe(in_addr{ip_header->daddr}));
+        logWarning("IP forward: cannot find next hop for %s", inet_ntoa_safe(in_addr{ip_header->daddr}).get());
         return -1;
     }
 
@@ -165,8 +173,8 @@ int ip_packet_handler(const void *buf, int len) {
         // for now we just log it.
 
         logInfo("a IP packet for me: %s. src=%s", 
-            inet_ntoa_safe(in_addr{ip_header->daddr}), 
-            inet_ntoa_safe(in_addr{ip_header->saddr}));
+            inet_ntoa_safe(in_addr{ip_header->daddr}).get(), 
+            inet_ntoa_safe(in_addr{ip_header->saddr}).get());
 
         return 0;
     }
