@@ -1,11 +1,13 @@
 #include "device.h"
 #include "common.h"
 #include "packetio.h"
+#include "routing.h"
 
 #include <sys/ioctl.h>
 #include <net/if.h>
 #include <errno.h>
 #include <netinet/ether.h>
+#include <mutex>
 
 #define MAX_DEVICE_NUM 256
 
@@ -20,6 +22,12 @@ static struct in_addr dev_mask_addr[MAX_DEVICE_NUM];
 static pcap_t *dev[MAX_DEVICE_NUM];
 
 int add_device(const char* device) {
+    static std::once_flag flag;
+    std::call_once(flag, []() {
+        // ========== fire routing upd timer ==========
+        fire_distance_upd_daemon();
+    });
+
     // ========== pcap open it ==========
     char errbuf[PCAP_ERRBUF_SIZE];
     pcap_t *handle = pcap_open_live(device, BUFSIZ, 
@@ -79,6 +87,11 @@ int add_device(const char* device) {
         new_id, mac_to_str(dev_mac_addr[new_id].ether_addr_octet, buf), 
         inet_ntoa_safe(dev_ip_addr[new_id]).get(),
         inet_ntoa_safe(dev_mask_addr[new_id]).get());
+
+
+    // ========== add to routing table ==========
+    add_static_routing_entry(dev_ip_addr[new_id], dev_mask_addr[new_id], 
+        dev_ip_addr[new_id], device, true /* direct neighbour */);
 
     return new_id;
 }
@@ -146,9 +159,24 @@ char ** get_host_device_lists(int *n) {
     return ret;
 }
 
-char *get_device_name(int id) { 
+const char *get_device_name(int id) { 
     if (!is_valid_id(id)) {
         return NULL;
     }
     return dev_name[id];
+}
+
+int get_dev_from_subnet(const in_addr ip, const in_addr mask) {
+    int dcnt = atomic_load(&device_count);
+    for (int id = 0; id < dcnt; id++) {
+        if (subnet_match(ip, dev_ip_addr[id], mask) 
+            && mask.s_addr == dev_mask_addr[id].s_addr) {
+            return id;
+        }
+    }
+    return -1;
+}
+
+int get_dev_cnt() {
+    return atomic_load(&device_count);
 }

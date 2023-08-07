@@ -39,4 +39,10 @@ pcap_t* get_pcap_handle(int id);
 // dont forget to free the list.
 char ** get_host_device_lists(int *n);
 
-char * get_device_name(int id);
+const char * get_device_name(int id);
+
+// return -1 for not neighbour, dev_id for the first match device.
+// we suppose there is only one match.
+int get_dev_from_subnet(const struct in_addr ip, const struct in_addr mask);
+
+int get_dev_cnt();

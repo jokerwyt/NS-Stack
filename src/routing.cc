@@ -2,12 +2,14 @@
 #include "logger.h"
 #include "device.h"
 #include "pnx_utils.h"
+#include "rustex.h"
+#include "packetio.h"
 
 #include <arpa/inet.h>
 #include <algorithm>
 
 
-struct RoutingEntry {
+struct RoutingEntry : public std::enable_shared_from_this<RoutingEntry> {
     in_addr dest;
     in_addr mask;
     in_addr next_hop;
@@ -47,19 +49,21 @@ public:
 
 
 static
-std::vector<std::shared_ptr<RoutingEntry>> routing_table_;
+std::vector<std::shared_ptr<RoutingEntry>> 
+    static_routing_table_, 
+    dynamic_routing_table_;
 
 
 #include <mutex>
 
 static 
-std::mutex mtx_; // lock of the routing table
+std::mutex routing_table_mtx_; // lock of the routing tables
 
 
-static void route_table_init() {
+static void route_table_init_from_OS() {
     // initialize from OS routing table.
 
-    std::unique_lock<std::mutex> lock(mtx_);
+    std::unique_lock<std::mutex> lock(routing_table_mtx_);
 
     // get the OS routing table through popen
     FILE *fp = popen("ip route", "r");
@@ -103,7 +107,7 @@ static void route_table_init() {
             if (id == -1) {
                 logWarning("found a scope link routing entry but no device %s added", device_name);
             } else 
-                routing_table_.push_back(std::make_shared<DirectRoutingEntry>(
+                static_routing_table_.push_back(std::make_shared<DirectRoutingEntry>(
                     ip, subnet_len_to_mask(subnet_len), id));
         } else {
             // it is not a scope link.
@@ -139,16 +143,16 @@ static void route_table_init() {
             if (id == -1) {
                 logWarning("found a normal routing entry but no device %s added", device_name);
             } else 
-                routing_table_.push_back(std::make_shared<RoutingEntry>(ip, 
+                static_routing_table_.push_back(std::make_shared<RoutingEntry>(ip, 
                     subnet_len_to_mask(subnet_len), next_hop, id));
         }
     }
 
-    std::sort(routing_table_.begin(), routing_table_.end());
+    std::sort(static_routing_table_.begin(), static_routing_table_.end());
 
     // print the routing table.
     logDebug("routing table:");
-    for (auto entry : routing_table_) {
+    for (auto entry : static_routing_table_) {
         logDebug("dest=%s, mask=%s, next_hop=%s, device=%s, is_direct=%d", 
             inet_ntoa_safe(entry->dest).get(), inet_ntoa_safe(entry->mask).get(), 
             inet_ntoa_safe(entry->next_hop).get(), get_device_name(entry->device_id),
@@ -157,18 +161,29 @@ static void route_table_init() {
 }
 
 std::pair<int, in_addr> get_next_hop(const in_addr dest) {
-    static bool initialized = false;
-    if (!initialized) {
-        route_table_init();
-        initialized = true;
-    }
+    // static bool initialized = false;
+    // if (!initialized) {
+    //     route_table_init_from_OS();
+    //     initialized = true;
+    // }
 
     // find the routing entry with the longest prefix match.
     // i.e. from the tail of the routing table.
 
 
-    std::unique_lock<std::mutex> lock(mtx_);
-    for (auto it = routing_table_.rbegin(); it != routing_table_.rend(); it++) {
+
+    std::unique_lock<std::mutex> lock(routing_table_mtx_);
+    // combines two routing tables
+    // we suppose the number of entries is small. dont worry about performance.
+    std::vector<std::shared_ptr<RoutingEntry>> routing_table;
+    routing_table.reserve(static_routing_table_.size() + dynamic_routing_table_.size());
+    routing_table.insert(routing_table.end(), static_routing_table_.begin(), static_routing_table_.end());
+    routing_table.insert(routing_table.end(), dynamic_routing_table_.begin(), dynamic_routing_table_.end());
+
+    std::sort(routing_table.begin(), routing_table.end());
+    lock.release();
+
+    for (auto it = routing_table.rbegin(); it != routing_table.rend(); it++) {
         auto entry = *it;
 
         // check if it is a direct routing entry.
@@ -191,8 +206,8 @@ std::pair<int, in_addr> get_next_hop(const in_addr dest) {
     return { -1, {0} };
 }
 
-int add_routing_entry(const in_addr dest, const in_addr mask,
-                      const struct in_addr next_hop, const char *device) {
+int add_static_routing_entry(const in_addr dest, const in_addr mask,
+                      const struct in_addr next_hop, const char *device, bool direct) {
 
     // check if the device exists.
     int id = find_device(device);
@@ -201,10 +216,10 @@ int add_routing_entry(const in_addr dest, const in_addr mask,
         return -1;
     }
 
-    std::unique_lock<std::mutex> lock(mtx_);
+    std::unique_lock<std::mutex> lock(routing_table_mtx_);
 
     // check if the routing entry already exists.
-    for (auto entry : routing_table_) {
+    for (auto entry : static_routing_table_) {
         if (entry->device_id == id && entry->dest.s_addr == dest.s_addr && entry->mask.s_addr == mask.s_addr) {
             logError("conflict routing entry: device %s, dest %s, mask %s", 
                 device, inet_ntoa_safe(dest), inet_ntoa_safe(mask));
@@ -213,8 +228,213 @@ int add_routing_entry(const in_addr dest, const in_addr mask,
     }
 
     // add the routing entry.
-    routing_table_.push_back(std::make_shared<RoutingEntry>(dest, mask, next_hop, id));
-    std::sort(routing_table_.begin(), routing_table_.end());
 
+    if (!direct)
+        static_routing_table_.push_back(std::make_shared<RoutingEntry>(dest, mask, next_hop, id));
+    else
+        static_routing_table_.push_back(std::make_shared<DirectRoutingEntry>(dest, mask, id));
+
+    std::sort(static_routing_table_.begin(), static_routing_table_.end());
     return 0;
+}
+
+
+// ====== dynamic routing ======
+
+struct DistanceEntry {
+    in_addr subnet;
+    in_addr mask;
+
+    int hops;
+
+    in_addr updated_from; // for the routing table update.
+
+    bool operator<(const DistanceEntry &rhs) const {
+        return subnet.s_addr < rhs.subnet.s_addr || 
+            (subnet.s_addr == rhs.subnet.s_addr && mask.s_addr < rhs.mask.s_addr);
+    }
+
+    bool operator==(const DistanceEntry &rhs) const {
+        return subnet.s_addr == rhs.subnet.s_addr && mask.s_addr == rhs.mask.s_addr;
+    }
+
+    std::string to_bytes() const {
+        std::string bytes;
+        // use network order
+        uint32_t subnet = htonl(this->subnet.s_addr);
+        uint32_t mask = htonl(this->mask.s_addr);
+        uint32_t hops = htonl(this->hops);
+        
+        bytes.append((char *)&subnet, sizeof(subnet));
+        bytes.append((char *)&mask, sizeof(mask));
+        bytes.append((char *)&hops, sizeof(hops));
+
+        return bytes;
+    }
+
+    static DistanceEntry from_bytes(const std::string &bytes) {
+        DistanceEntry entry;
+        // use network order
+        uint32_t subnet;
+        uint32_t mask;
+        uint32_t hops;
+        memcpy(&subnet, bytes.data(), sizeof(subnet));
+        memcpy(&mask, bytes.data() + sizeof(subnet), sizeof(mask));
+        memcpy(&hops, bytes.data() + sizeof(subnet) + sizeof(mask), sizeof(hops));
+        entry.subnet.s_addr = ntohl(subnet);
+        entry.mask.s_addr = ntohl(mask);
+        entry.hops = ntohl(hops);
+
+        return entry;
+    }
+};
+
+struct DEHash {
+    size_t operator()(const DistanceEntry &entry) const {
+        return entry.subnet.s_addr ^ entry.mask.s_addr;
+    }
+};
+
+#include <unordered_set>
+static rustex::mutex<std::unordered_set<DistanceEntry, DEHash>> distance_vec_{};
+
+static std::string distance_vec_to_bytes() {
+    auto dv = distance_vec_.lock();
+    std::string bytes;
+    // the first 4 bytes is the number of entries.
+    uint32_t num = htonl(dv->size());
+    bytes.append((char *)&num, sizeof(num));
+
+    // then append all entries.
+    for (auto entry : *dv) {
+        bytes.append(entry.to_bytes());
+    }
+    return bytes;
+}
+
+// return -1 when error, 0 when success without upd, 1 when success with upd.
+static int resolve_distance_upd(const in_addr source, const std::string &bytes) {
+    // parse the bytes.
+    // the first 4 bytes is the number of entries.
+    uint32_t num;
+    memcpy(&num, bytes.data(), sizeof(num));
+    num = ntohl(num);
+
+    // check the length.
+    if (bytes.size() < sizeof(num) + num * sizeof(DistanceEntry)) {
+        logError("too short distance upd.");
+        return -1;
+    }
+
+    auto dv = distance_vec_.lock_mut();
+
+    // get every entry to update the current distance vector.
+    int updated = 0;
+    for (int i = 0; i < (int)num; i++) {
+        DistanceEntry entry = 
+            DistanceEntry::from_bytes(bytes.substr(sizeof(num) + i * sizeof(entry), sizeof(entry)));
+        
+        entry.updated_from = source;
+        entry.hops++;
+
+        // check if the entry is in the distance vector.
+        auto it = dv->find(entry);
+        if (it == dv->end()) {
+            // it is not in the distance vector.
+            // add it.
+            dv->insert(entry);
+            updated = 1;
+        } else {
+            // it is in the distance vector.
+            // check if the hops is smaller.
+            if (it->hops > entry.hops) {
+                // the hops is smaller.
+                // update it.
+                dv->erase(it);
+                dv->insert(entry);
+                updated = 1;
+            } else {
+                // the hops is not smaller.
+                // ignore it.
+                continue;
+            }
+        }
+    }
+    return updated;
+}
+
+static 
+std::vector<std::shared_ptr<RoutingEntry>> generate_dynamic_routing_table_from_dv() {
+    std::vector<std::shared_ptr<RoutingEntry>> routing_table;
+
+    auto dv = distance_vec_.lock();
+
+    // for each entry in the distance vector, generate a routing entry.
+    for (auto entry : *dv) {
+        routing_table.push_back(std::make_shared<RoutingEntry>(entry.subnet, entry.mask, 
+            entry.updated_from, get_dev_from_subnet(entry.subnet, entry.mask)));
+    }
+
+    std::sort(routing_table.begin(), routing_table.end());
+    return routing_table;
+}
+
+int distance_upd_handler(const char *payload, size_t len) {
+    struct in_addr from;
+    memcpy(&from, payload, sizeof(from));
+
+    // construct a string from the buffer
+    std::string bytes(payload + sizeof(from), len - sizeof(from));
+
+    int result = resolve_distance_upd(from, bytes);
+
+    if (result < 0) {
+        logError("fail to resolve routing update.");
+        return -1;
+    } else if (result > 0) {
+        // update the routing table.
+        std::unique_lock<std::mutex> lock(routing_table_mtx_);
+        dynamic_routing_table_ = std::move(generate_dynamic_routing_table_from_dv());
+        logInfo("routing table updated.");
+    }
+    return 0;
+}
+
+
+#include <thread>
+
+static const int kRoutingPeriod = 1000; // ms
+int fire_distance_upd_daemon() {
+    std::thread t = std::thread([]() {
+        while (true) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(kRoutingPeriod));
+            
+            // send distance upd to all neighbors.
+            // broadcast to all devices.
+            std::string dv_bytes = distance_vec_to_bytes();
+            
+            int dcnt = get_dev_cnt();
+            for (int id = 0; id < dcnt; id++) {
+                // send the distance upd.
+                
+                std::string payload;
+                auto ip = dev_ip(id);
+                payload.append((char *)&ip->s_addr, sizeof(ip->s_addr));
+                payload.append(dv_bytes);
+
+                if (send_frame(payload.data(), payload.size(), kRoutingProtocolCode, &kBroadcast, id) != 0) {
+                    logError("fail to send routing upd to device %s", get_device_name(id));
+                }
+            }
+        }
+    });
+    
+    // check sucess.
+    if (t.joinable()) {
+        t.detach();
+        return 0;
+    } else {
+        logError("fail to fire routing upd timer.");
+        return -1;
+    }
 }

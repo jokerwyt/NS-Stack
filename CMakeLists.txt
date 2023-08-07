@@ -26,7 +26,7 @@ if (CMAKE_BUILD_TYPE STREQUAL "Release")
 endif()
 
 # 添加includes目录
-include_directories(src/includes)
+include_directories(src/includes thirdparty/includes)
 
 # Find and link pthread
 find_package(Threads REQUIRED)

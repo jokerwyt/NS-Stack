@@ -3,6 +3,7 @@
 #include "device.h"
 #include "pnx_ip.h"
 #include "arp.h"
+#include "routing.h"
 
 #include <pcap.h>
 #include <atomic>
@@ -66,6 +67,14 @@ static void frame_handler(
 
 
     int dev_id = *(int*) _dev_id;
+    logDebug("recv a eth frame, dev_id=%d", dev_id);
+
+    // PNX DV upd
+    if (ntohs(eth_header->ether_type) == kRoutingProtocolCode) {
+        if (distance_upd_handler((const char *)(bytes + ETH_HLEN), h->len) != 0) {
+            logWarning("upper layer fails to handle PNX DV update packet");
+        }
+    }
 
     // ARP
     if (ntohs(eth_header->ether_type) == ETHERTYPE_ARP) {
@@ -85,7 +94,6 @@ static void frame_handler(
     // * @param len Length of the frame.
     // * @param id ID of the device (returned by ‘addDevice‘) receiving current frame.
 
-    logWarning("unknown frame, give it to user callback");
     auto callback = recv_callback.load();
     if (callback)
         callback(bytes, h->caplen, dev_id);

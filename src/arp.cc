@@ -15,7 +15,7 @@ struct InAddrHash {
     }
 };
 
-static std::mutex mtx_; // a big lock for the whole ARP module
+static std::mutex routing_table_mtx_; // a big lock for the whole ARP module
 static std::unordered_map<in_addr, ether_addr, InAddrHash> cache_;
 
 // A cv will be constructed when an ARP request is sent.
@@ -31,7 +31,7 @@ static std::unordered_map<in_addr, std::shared_ptr<std::condition_variable>,
 static const int kARPTimeout = 50000000; // milliseconds
 
 int ARPQuery(int dev_id, const in_addr target_ip, ether_addr* target_mac) {
-    std::unique_lock<std::mutex> lock(mtx_);
+    std::unique_lock<std::mutex> lock(routing_table_mtx_);
 
     if (cache_.find(target_ip) != cache_.end()) {
         *target_mac = cache_[target_ip];
@@ -95,7 +95,7 @@ int ARPQuery(int dev_id, const in_addr target_ip, ether_addr* target_mac) {
 }
 
 int ARPHandler(int dev_id, const char* ether_frame) {
-    std::unique_lock<std::mutex> guard(mtx_);
+    std::unique_lock<std::mutex> guard(routing_table_mtx_);
 
     const struct ether_arp *arp = (struct ether_arp*)(ether_frame + ETH_HLEN);
     if (arp->ea_hdr.ar_op == htons(ARPOP_REPLY)) {
