@@ -17,11 +17,11 @@ pkill lab1
 
 export PNX_NOCOLOR=1
 # server
-$ROOT_DIR/vnetUtils/helper/execNS ns1 $TBIN_DIR/lab1 &
+PNX_LOG_PREFIX=server $ROOT_DIR/vnetUtils/helper/execNS ns1 $TBIN_DIR/lab1 &
 
 sleep 1
 
 # client. MAC addr from ns1 device
-$ROOT_DIR/vnetUtils/helper/execNS ns2 $TBIN_DIR/lab1 5a:f1:43:d9:1e:eb &
+PNX_LOG_PREFIX=client $ROOT_DIR/vnetUtils/helper/execNS ns2 $TBIN_DIR/lab1 5a:f1:43:d9:1e:eb &
 
 wait

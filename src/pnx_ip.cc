@@ -132,12 +132,6 @@ int ip_packet_handler(const void *buf, int len) {
             return -1;
         }
 
-        // verify the total length
-        if (ntohs(ip_header->tot_len) != len) {
-            logWarning("IP total length error");
-            return -1;
-        }
-
         // verify the TTL
         if (ip_header->ttl == 0) {
             logWarning("IP packet dropped due to TTL=0.");
@@ -187,12 +181,24 @@ int ip_packet_handler(const void *buf, int len) {
         return -1;
     }
 
-    // direct this packet to the next hop.
-    ip_header->daddr = next_hop_ip.s_addr;
-
     // recalc the checksum
     ip_header->check = calc_iphd_checksum(ip_header);
 
+
+    // get next hop mac address
+    struct ether_addr dest_mac;
+    if (ARPQuery(dev_id, next_hop_ip, &dest_mac) != 0) {
+        logWarning("cannot find ARP entry for %s", inet_ntoa_safe(next_hop_ip).get());
+        return -1;
+    }
+
     // forward the packet
-    return send_frame(buf, len, ETHERTYPE_IP, dev_mac(dev_id), dev_id);
+    int result = send_frame(buf, len, ETHERTYPE_IP, &dest_mac, dev_id);
+
+    if (result != 0) {
+        logWarning("fail to forward IP packet");
+        return -1;
+    }
+    
+    return 0;
 }

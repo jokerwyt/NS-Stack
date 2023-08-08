@@ -1,6 +1,6 @@
 #include "logger.h"
 
-std::string pnx_logger_perfix = "NA";
+static std::string pnx_logger_perfix = "NA";
 
 // 获取日志级别名称
 const char* levelName(LogLevel level) {
@@ -26,8 +26,7 @@ const char* levelName(LogLevel level) {
 static LogLevel logLevel = LOG_DEBUG;
 static int enableColor = 1;
 
-// 设置环境变量LOG_LEVEL来动态修改日志级别
-static void setLogLevelFromEnv() {
+static void setupLoggerFromEnv() {
     char *env_level = getenv("PNX_LOG_LEVEL");
     if (env_level != NULL) {
         if (strcmp(env_level, "TRACE") == 0) {
@@ -47,13 +46,20 @@ static void setLogLevelFromEnv() {
             exit(-1);
         }
     }
-}
 
-static void setLogColorFromEnv() {
-    char *env_level = getenv("PNX_NOCOLOR");
-    if (env_level == NULL) {
+
+
+    char *env_color = getenv("PNX_NOCOLOR");
+    if (env_color == NULL) {
         enableColor = 1;
     } else enableColor = 0;
+
+
+    // get prefix
+    char *env_prefix = getenv("PNX_LOG_PREFIX");
+    if (env_prefix != NULL) {
+        pnx_logger_perfix = std::string(env_prefix);
+    }
 }
 
 // 获取当前时间，精确到毫秒
@@ -72,8 +78,7 @@ static char* getCurrentTime() {
 void _mylog(LogLevel level, const char *file, int line, const char *format, ...) {
     static int init = 0;
     if (!init) {
-        setLogLevelFromEnv();
-        setLogColorFromEnv();
+        setupLoggerFromEnv();
         init = 1;
     }
 

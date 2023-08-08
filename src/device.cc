@@ -123,6 +123,14 @@ const in_addr *dev_ip(int id) {
     return &dev_ip_addr[id];
 }
 
+const in_addr *dev_mask(int id) {
+    if (!is_valid_id(id)) {
+        logError("try to get invalid device mask. id=%d", id);
+        return nullptr;
+    }
+    return &dev_mask_addr[id];
+}
+
 int is_valid_id(int id) {
     return 0 <= id && id < atomic_load(&device_count);
 }
@@ -174,6 +182,8 @@ int get_dev_from_subnet(const in_addr ip, const in_addr mask) {
             return id;
         }
     }
+    logDebug("fail get_dev_from_subnet: ip=%s, mask=%s", 
+        inet_ntoa_safe(ip).get(), inet_ntoa_safe(mask).get());
     return -1;
 }
 

@@ -16,11 +16,7 @@ int main(int argc, char **args) {
         logError("Usage for server: %s", args[0]);
         logError("Usage for client: %s <Target MAC addr>", args[0]);
         return 0;
-    } else if (argc == 2) 
-        pnx_logger_perfix = "client";
-    else /* argc == 1 */
-        pnx_logger_perfix = "server";
-
+    }
     int dcnt = 0;
     char **devices = get_host_device_lists(&dcnt);
     logInfo("Available devices:");
@@ -30,7 +26,6 @@ int main(int argc, char **args) {
     free(devices);
     if (argc == 1) {
         // server case
-        pnx_logger_perfix = "server";
 
         const char * device = "veth1-2";
         int id = add_device(device);
@@ -52,7 +47,6 @@ int main(int argc, char **args) {
         sleep(10086);
     } else {
         // client case
-        pnx_logger_perfix = "client";
 
         const char * device = "veth2-1";
         int id = add_device(device);

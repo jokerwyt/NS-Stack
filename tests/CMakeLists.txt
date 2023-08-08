@@ -1,6 +1,6 @@
 add_executable(logger_test logger_test.cc)
 add_executable(lab1 lab1.cc)
-add_executable(lab2-cp4 lab2-cp4.cc)
+add_executable(lab2 lab2.cc)
 
 
 
@@ -11,7 +11,7 @@ set(TARGETS_TO_LINK)
 list(APPEND TARGETS_TO_LINK 
     logger_test
     lab1
-    lab2-cp4
+    lab2
 )
 
 foreach(TARGET_NAME IN LISTS TARGETS_TO_LINK)

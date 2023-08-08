@@ -48,6 +48,13 @@ public:
 #include <vector>
 
 
+// static_routing_table_ comes from add_static_routing_entry.
+// including all neighbour subnet routing entries (direct entries).
+// dynamic_routing_table_ comes from distance_vec_.  
+// direct entries have no priority. 
+// we sort them with the normal entries by mask.
+// dynamic_routing_table_ does not contain direct entries.
+
 static
 std::vector<std::shared_ptr<RoutingEntry>> 
     static_routing_table_, 
@@ -161,11 +168,12 @@ static void route_table_init_from_OS() {
 }
 
 std::pair<int, in_addr> get_next_hop(const in_addr dest) {
-    // static bool initialized = false;
-    // if (!initialized) {
-    //     route_table_init_from_OS();
-    //     initialized = true;
-    // }
+    // we dont need to initialize it from OS any more.
+    static bool initialized = true; 
+    if (!initialized) {
+        route_table_init_from_OS();
+        initialized = true;
+    }
 
     // find the routing entry with the longest prefix match.
     // i.e. from the tail of the routing table.
@@ -181,7 +189,7 @@ std::pair<int, in_addr> get_next_hop(const in_addr dest) {
     routing_table.insert(routing_table.end(), dynamic_routing_table_.begin(), dynamic_routing_table_.end());
 
     std::sort(routing_table.begin(), routing_table.end());
-    lock.release();
+    lock.unlock();
 
     for (auto it = routing_table.rbegin(); it != routing_table.rend(); it++) {
         auto entry = *it;
@@ -242,30 +250,45 @@ int add_static_routing_entry(const in_addr dest, const in_addr mask,
 // ====== dynamic routing ======
 
 struct DistanceEntry {
-    in_addr subnet;
+    // for routing purpose, we only concern about the subnet number.
+    in_addr ip;             
     in_addr mask;
 
     int hops;
 
-    in_addr updated_from; // for the routing table update.
+    in_addr updated_from;   // for the routing table update.
+    int recv_dev_id;
 
-    bool operator<(const DistanceEntry &rhs) const {
-        return subnet.s_addr < rhs.subnet.s_addr || 
-            (subnet.s_addr == rhs.subnet.s_addr && mask.s_addr < rhs.mask.s_addr);
+    DistanceEntry() {}
+    DistanceEntry(const in_addr ip, const in_addr mask, int hops) {
+        this->ip.s_addr = ip.s_addr & mask.s_addr;
+        this->mask = mask;
+        this->hops = hops;
     }
 
     bool operator==(const DistanceEntry &rhs) const {
-        return subnet.s_addr == rhs.subnet.s_addr && mask.s_addr == rhs.mask.s_addr;
+        return this->subnet().s_addr == rhs.subnet().s_addr 
+            && mask.s_addr == rhs.mask.s_addr;
     }
+
+
+    inline in_addr subnet() const {
+        in_addr subnet;
+        subnet.s_addr = ip.s_addr & mask.s_addr;
+        return subnet;
+    }
+
+
+    static const int kSizeOnwire = sizeof(ip.s_addr) + sizeof(mask.s_addr) + sizeof(hops);
 
     std::string to_bytes() const {
         std::string bytes;
         // use network order
-        uint32_t subnet = htonl(this->subnet.s_addr);
+        uint32_t ip = htonl(this->ip.s_addr);
         uint32_t mask = htonl(this->mask.s_addr);
         uint32_t hops = htonl(this->hops);
         
-        bytes.append((char *)&subnet, sizeof(subnet));
+        bytes.append((char *)&ip, sizeof(ip));
         bytes.append((char *)&mask, sizeof(mask));
         bytes.append((char *)&hops, sizeof(hops));
 
@@ -275,13 +298,13 @@ struct DistanceEntry {
     static DistanceEntry from_bytes(const std::string &bytes) {
         DistanceEntry entry;
         // use network order
-        uint32_t subnet;
+        uint32_t ip;
         uint32_t mask;
         uint32_t hops;
-        memcpy(&subnet, bytes.data(), sizeof(subnet));
-        memcpy(&mask, bytes.data() + sizeof(subnet), sizeof(mask));
-        memcpy(&hops, bytes.data() + sizeof(subnet) + sizeof(mask), sizeof(hops));
-        entry.subnet.s_addr = ntohl(subnet);
+        memcpy(&ip, bytes.data(), sizeof(ip));
+        memcpy(&mask, bytes.data() + sizeof(ip), sizeof(mask));
+        memcpy(&hops, bytes.data() + sizeof(ip) + sizeof(mask), sizeof(hops));
+        entry.ip.s_addr = ntohl(ip);
         entry.mask.s_addr = ntohl(mask);
         entry.hops = ntohl(hops);
 
@@ -291,7 +314,7 @@ struct DistanceEntry {
 
 struct DEHash {
     size_t operator()(const DistanceEntry &entry) const {
-        return entry.subnet.s_addr ^ entry.mask.s_addr;
+        return entry.ip.s_addr & entry.mask.s_addr;
     }
 };
 
@@ -302,18 +325,25 @@ static std::string distance_vec_to_bytes() {
     auto dv = distance_vec_.lock();
     std::string bytes;
     // the first 4 bytes is the number of entries.
-    uint32_t num = htonl(dv->size());
+    int dcnt = get_dev_cnt();
+    uint32_t num = htonl((int)(dv->size() + dcnt));
     bytes.append((char *)&num, sizeof(num));
 
     // then append all entries.
     for (auto entry : *dv) {
         bytes.append(entry.to_bytes());
     }
+
+    // add scope links
+    for (int id = 0; id < dcnt; id++) {
+        bytes.append(DistanceEntry{*dev_ip(id), *dev_mask(id), 0}.to_bytes());
+    }
+
     return bytes;
 }
 
 // return -1 when error, 0 when success without upd, 1 when success with upd.
-static int resolve_distance_upd(const in_addr source, const std::string &bytes) {
+static int resolve_distance_upd(const int recv_dev_id, const in_addr source, const std::string &bytes) {
     // parse the bytes.
     // the first 4 bytes is the number of entries.
     uint32_t num;
@@ -321,7 +351,7 @@ static int resolve_distance_upd(const in_addr source, const std::string &bytes) 
     num = ntohl(num);
 
     // check the length.
-    if (bytes.size() < sizeof(num) + num * sizeof(DistanceEntry)) {
+    if (bytes.size() < sizeof(num) + num * DistanceEntry::kSizeOnwire) {
         logError("too short distance upd.");
         return -1;
     }
@@ -332,9 +362,16 @@ static int resolve_distance_upd(const in_addr source, const std::string &bytes) 
     int updated = 0;
     for (int i = 0; i < (int)num; i++) {
         DistanceEntry entry = 
-            DistanceEntry::from_bytes(bytes.substr(sizeof(num) + i * sizeof(entry), sizeof(entry)));
-        
+            DistanceEntry::from_bytes(
+                bytes.substr(sizeof(num) + i * DistanceEntry::kSizeOnwire, 
+                DistanceEntry::kSizeOnwire));
+
+        // filter out scope link
+        if (get_dev_from_subnet(entry.ip, entry.mask) != -1)
+            continue;
+
         entry.updated_from = source;
+        entry.recv_dev_id = recv_dev_id;
         entry.hops++;
 
         // check if the entry is in the distance vector.
@@ -366,27 +403,43 @@ static int resolve_distance_upd(const in_addr source, const std::string &bytes) 
 static 
 std::vector<std::shared_ptr<RoutingEntry>> generate_dynamic_routing_table_from_dv() {
     std::vector<std::shared_ptr<RoutingEntry>> routing_table;
-
     auto dv = distance_vec_.lock();
+
+    // print the distance vector
+    logDebug("distance vector:");
+    for (auto entry : *dv) {
+        logDebug("dest=%s, mask=%s, hops=%d, updated_from=%s", 
+            inet_ntoa_safe(entry.ip).get(), inet_ntoa_safe(entry.mask).get(), 
+            entry.hops, inet_ntoa_safe(entry.updated_from).get());
+    }
 
     // for each entry in the distance vector, generate a routing entry.
     for (auto entry : *dv) {
-        routing_table.push_back(std::make_shared<RoutingEntry>(entry.subnet, entry.mask, 
-            entry.updated_from, get_dev_from_subnet(entry.subnet, entry.mask)));
+        routing_table.push_back(std::make_shared<RoutingEntry>(entry.ip, entry.mask, 
+            entry.updated_from, get_dev_from_subnet(entry.updated_from, entry.mask)));
     }
 
     std::sort(routing_table.begin(), routing_table.end());
+
+    // print the routing table.
+    logDebug("dynamic routing table:");
+    for (auto entry : routing_table) {
+        logDebug("dest=%s, mask=%s, next_hop=%s, device=%s", 
+            inet_ntoa_safe(entry->dest).get(), inet_ntoa_safe(entry->mask).get(), 
+            inet_ntoa_safe(entry->next_hop).get(), get_device_name(entry->device_id));
+    }
+
     return routing_table;
 }
 
-int distance_upd_handler(const char *payload, size_t len) {
+int distance_upd_handler(int dev_id, const char *payload, size_t len) {
     struct in_addr from;
     memcpy(&from, payload, sizeof(from));
 
     // construct a string from the buffer
     std::string bytes(payload + sizeof(from), len - sizeof(from));
 
-    int result = resolve_distance_upd(from, bytes);
+    int result = resolve_distance_upd(dev_id, from, bytes);
 
     if (result < 0) {
         logError("fail to resolve routing update.");

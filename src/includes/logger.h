@@ -19,8 +19,6 @@ typedef enum {
     LOG_FATAL = 5
 } LogLevel;
 
-extern std::string pnx_logger_perfix;
-
 // 获取日志级别名称
 const char* levelName(LogLevel level);
 

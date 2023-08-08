@@ -71,22 +71,22 @@ static void frame_handler(
 
     // PNX DV upd
     if (ntohs(eth_header->ether_type) == kRoutingProtocolCode) {
-        if (distance_upd_handler((const char *)(bytes + ETH_HLEN), h->len) != 0) {
-            logWarning("upper layer fails to handle PNX DV update packet");
+        if (distance_upd_handler(dev_id, (const char *)(bytes + ETH_HLEN), h->len) != 0) {
+            logError("upper layer fails to handle PNX DV update packet");
         }
     }
 
     // ARP
     if (ntohs(eth_header->ether_type) == ETHERTYPE_ARP) {
         if (ARPHandler(dev_id, (const char *) bytes) != 0) {
-            logWarning("upper layer fails to handle ARP packet");
+            logError("upper layer fails to handle ARP packet");
         }
     }
 
     // IP
     if (ntohs(eth_header->ether_type) == ETHERTYPE_IP) {
         if (ip_packet_handler(bytes + ETH_HLEN, h->caplen - ETH_HLEN) != 0) {
-            logWarning("upper layer fails to handle IP packet");
+            logError("upper layer fails to handle IP packet");
         }
     }
 
