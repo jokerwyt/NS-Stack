@@ -28,9 +28,9 @@ $UTILS/execNS ns4 $UTILS/bypassKernel
 
 pkill lab2
 
-# export PNX_NOCOLOR=1
+export PNX_NOCOLOR=1
 # server in ns1
-PNX_LOG_PREFIX=ns1-server $ROOT_DIR/vnetUtils/helper/execNS ns1 $TBIN_DIR/lab2 -dveth1-2 &
+PNX_LOG_PREFIX=ns1-server $ROOT_DIR/vnetUtils/helper/execNS ns1 $TBIN_DIR/lab2 -dveth1-2 > /tmp/ns1 &
 
 # ns2
 PNX_LOG_PREFIX=ns2 $ROOT_DIR/vnetUtils/helper/execNS ns2 $TBIN_DIR/lab2 -dveth2-1,veth2-3 > /tmp/ns2&
@@ -39,6 +39,6 @@ PNX_LOG_PREFIX=ns2 $ROOT_DIR/vnetUtils/helper/execNS ns2 $TBIN_DIR/lab2 -dveth2-
 PNX_LOG_PREFIX=ns3 $ROOT_DIR/vnetUtils/helper/execNS ns3 $TBIN_DIR/lab2 -dveth3-2,veth3-4 > /tmp/ns3 &
 
 # ns4
-PNX_LOG_PREFIX=ns4-client $ROOT_DIR/vnetUtils/helper/execNS ns4 $TBIN_DIR/lab2 -dveth4-3 10.100.1.1 &
+PNX_LOG_PREFIX=ns4-client $ROOT_DIR/vnetUtils/helper/execNS ns4 $TBIN_DIR/lab2 -dveth4-3 10.100.1.1 > /tmp/ns4 &
 
 wait

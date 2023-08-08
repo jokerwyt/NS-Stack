@@ -6,6 +6,8 @@
 * in an Ethernet II frame. 
 */
 #include <netinet/ip.h>
+#include <functional>
+#include <atomic>
 
 
 /**
@@ -22,3 +24,8 @@ int sendIPPacket(const struct in_addr src, const struct in_addr dest,
 
 
 int ip_packet_handler(const void* buf, int len);
+
+// return 0 for success.
+typedef int (*ip_packet_callback)(const void* buf, int len);
+
+int set_ip_packet_callback(ip_packet_callback cb);

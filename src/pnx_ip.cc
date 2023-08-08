@@ -9,6 +9,15 @@
 
 #include <arpa/inet.h>
 
+
+static std::atomic<ip_packet_callback> ip_callback{nullptr};
+
+int set_ip_packet_callback(ip_packet_callback cb) {
+    ip_callback.store(cb);
+    return 0;
+}
+
+
 // calc the checksum of the ip header without modifying the ip header.
 static uint16_t calc_iphd_checksum(struct iphdr *ip_header) {
     // calc the checksum of the ip header using the RFC specified algorithm.
@@ -170,6 +179,10 @@ int ip_packet_handler(const void *buf, int len) {
             inet_ntoa_safe(in_addr{ip_header->daddr}).get(), 
             inet_ntoa_safe(in_addr{ip_header->saddr}).get());
 
+        if (ip_callback.load() != nullptr) {
+            return ip_callback.load()(buf, len);
+        }
+
         return 0;
     }
 
@@ -193,6 +206,7 @@ int ip_packet_handler(const void *buf, int len) {
     }
 
     // forward the packet
+    logTrace("forwarding IP packet to %s", inet_ntoa_safe(next_hop_ip).get());
     int result = send_frame(buf, len, ETHERTYPE_IP, &dest_mac, dev_id);
 
     if (result != 0) {

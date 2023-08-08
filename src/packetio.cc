@@ -37,7 +37,7 @@ int send_frame(const void* buf, int len, int ethtype, const ether_addr* destmac,
     memcpy(frame + ETH_HLEN, buf, len);
     size_t padding = 0;
     if (frame_length < ETHER_MIN_LEN) {
-        logWarning("try to send a too small eth frame (len %d). apply padding.", frame_length);
+        logDebug("try to send a too small eth frame (len %d). apply padding.", frame_length);
         padding = ETHER_MIN_LEN - frame_length;
         memset(frame + ETH_HLEN + len, 0, padding);
     }
@@ -67,7 +67,8 @@ static void frame_handler(
 
 
     int dev_id = *(int*) _dev_id;
-    logDebug("recv a eth frame, dev_id=%d", dev_id);
+    logDebug("recv a eth frame, dev=%s, protocol=%d", 
+        get_device_name(dev_id), ntohs(eth_header->ether_type));
 
     // PNX DV upd
     if (ntohs(eth_header->ether_type) == kRoutingProtocolCode) {

@@ -60,15 +60,32 @@ int main(int argc, char **args) {
     if (argc == 2) {
         // server case
         logInfo("server started.");
+        set_ip_packet_callback([] (const void* buf, int len)->int {
+            (void)len;
+
+            // get the time
+            long long time = get_time_us();
+
+            long long send_time = 0;
+
+            const char* payload = (const char*)buf + sizeof(struct iphdr);
+            sscanf((const char*)payload, "%lld", &send_time);
+            logInfo("IP packet latency %lld us", 
+                time - send_time);
+            return 0;
+        });
         sleep(10086);
     } else {
         // client case
         logInfo("target IP: %s", target_ip.c_str());
 
+
+        sleep(5);
         while (1) {
             long long time = get_time_us();
             char msg[1000];
-            sprintf(msg, "hello world! %lld", time);
+            sprintf(msg, "%lld hello world! sssssssssssssssssssss \
+                sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss", time);
             sendIPPacket(*dev_ip(0), ip, 0x0, msg, strlen(msg));
             sleep(1);
         }

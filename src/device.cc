@@ -29,14 +29,23 @@ int add_device(const char* device) {
     });
 
     // ========== pcap open it ==========
+    // use pcap_create and pcap_activate and pcap_set_immediate_mode
+    // to avoid the delay of pcap_open_live.
+
     char errbuf[PCAP_ERRBUF_SIZE];
-    pcap_t *handle = pcap_open_live(device, BUFSIZ, 
-        1, /* promisc mode */
-        1000, /* wait time */
-        errbuf);
-    
+    pcap_t *handle = pcap_create(device, errbuf);
     if (handle == NULL) {
-        logError("fail pcap_open_live: %s", errbuf);
+        logError("fail to create pcap handle. errmsg=%s", errbuf);
+        return -1;
+    }
+    if (pcap_set_immediate_mode(handle, 1) != 0) {
+        logError("fail to set pcap immediate mode. errmsg=%s", pcap_geterr(handle));
+        pcap_close(handle);
+        return -1;
+    }
+    if (pcap_activate(handle) != 0) {
+        logError("fail to activate pcap handle. errmsg=%s", pcap_geterr(handle));
+        pcap_close(handle);
         return -1;
     }
 
@@ -53,7 +62,7 @@ int add_device(const char* device) {
         logError("create socket fail. errmsg=%s", strerror(errno));
         return -1;
     }
-    strncpy(ifr.ifr_name, device, IFNAMSIZ);
+    strncpy(ifr.ifr_name, device, IFNAMSIZ - 1);
     if (ioctl(sockfd, SIOCGIFHWADDR, &ifr) < 0) {
         logError("can not get device mac addr. errmsg=%s", strerror(errno));
         close(sockfd);
@@ -182,8 +191,8 @@ int get_dev_from_subnet(const in_addr ip, const in_addr mask) {
             return id;
         }
     }
-    logDebug("fail get_dev_from_subnet: ip=%s, mask=%s", 
-        inet_ntoa_safe(ip).get(), inet_ntoa_safe(mask).get());
+    // logDebug("fail get_dev_from_subnet: ip=%s, mask=%s", 
+    //     inet_ntoa_safe(ip).get(), inet_ntoa_safe(mask).get());
     return -1;
 }
 
