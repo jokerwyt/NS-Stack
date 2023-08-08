@@ -50,8 +50,8 @@ frame format:
 
 
 // return 0 on success, -1 on error
-// buf to eth payload, len is the len of the whole eth frame.
-int distance_upd_handler(int dev_id, const char *payload, size_t len);
+// buf to eth payload
+int distance_upd_handler(int dev_id, const char *payload, size_t payload_len);
 
 int fire_distance_upd_daemon();
 

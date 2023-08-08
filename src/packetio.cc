@@ -72,7 +72,7 @@ static void frame_handler(
 
     // PNX DV upd
     if (ntohs(eth_header->ether_type) == kRoutingProtocolCode) {
-        if (distance_upd_handler(dev_id, (const char *)(bytes + ETH_HLEN), h->len) != 0) {
+        if (distance_upd_handler(dev_id, (const char *)(bytes + ETH_HLEN), h->caplen - ETH_HLEN) != 0) {
             logError("upper layer fails to handle PNX DV update packet");
         }
     }

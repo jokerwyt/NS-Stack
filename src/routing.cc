@@ -432,12 +432,12 @@ std::vector<std::shared_ptr<RoutingEntry>> generate_dynamic_routing_table_from_d
     return routing_table;
 }
 
-int distance_upd_handler(int dev_id, const char *payload, size_t len) {
+int distance_upd_handler(int dev_id, const char *payload, size_t payload_len) {
     struct in_addr from;
     memcpy(&from, payload, sizeof(from));
 
     // construct a string from the buffer
-    std::string bytes(payload + sizeof(from), len - sizeof(from));
+    std::string bytes(payload + sizeof(from), payload_len - sizeof(from));
 
     int result = resolve_distance_upd(dev_id, from, bytes);
 
