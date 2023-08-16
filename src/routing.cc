@@ -187,9 +187,9 @@ std::pair<int, in_addr> get_next_hop(const in_addr dest) {
     routing_table.reserve(static_routing_table_.size() + dynamic_routing_table_.size());
     routing_table.insert(routing_table.end(), static_routing_table_.begin(), static_routing_table_.end());
     routing_table.insert(routing_table.end(), dynamic_routing_table_.begin(), dynamic_routing_table_.end());
+    lock.unlock();
 
     std::sort(routing_table.begin(), routing_table.end());
-    lock.unlock();
 
     for (auto it = routing_table.rbegin(); it != routing_table.rend(); it++) {
         auto entry = *it;
@@ -428,7 +428,6 @@ std::vector<std::shared_ptr<RoutingEntry>> generate_dynamic_routing_table_from_d
             inet_ntoa_safe(entry->dest).get(), inet_ntoa_safe(entry->mask).get(), 
             inet_ntoa_safe(entry->next_hop).get(), get_device_name(entry->device_id));
     }
-
     return routing_table;
 }
 

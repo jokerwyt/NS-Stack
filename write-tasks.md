@@ -17,7 +17,7 @@ which will be replied by the destination host.
 WT-4
 My routing subsystem is splited into two parts: static and dynamic.
 The static part includes scope link (i.e. direct subnet) and manual entries.
-The dynamic part bases on Distance Vector. A daemon thread is launched for 
+The dynamic part bases on Distance Vector algorithm. A daemon thread is launched for 
 periodly sending distance vector update to all neighbours. Once a host receives
 a distance vector update, it will try to update its distance vector and the 
 dynamic routing table.

@@ -84,9 +84,12 @@ int main(int argc, char **args) {
         while (1) {
             long long time = get_time_us();
             char msg[1000];
-            sprintf(msg, "%lld hello world! sssssssssssssssssssss \
-                sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss", time);
-            sendIPPacket(*dev_ip(0), ip, 0x0, msg, strlen(msg));
+            sprintf(msg, 
+"%lld hello world! iampadding iampadding iampadding \
+iampadding iampadding iampadding iampadding iampadding iampadding", 
+            time);
+
+            sendIPPacket(*dev_ip(0), ip, IPPROTO_TCP, msg, strlen(msg));
             sleep(1);
         }
     }
