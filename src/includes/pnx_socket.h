@@ -1,5 +1,19 @@
 #pragma once
 
+
+
+/* 
+    Design Doc of Socket layer.
+
+    We suppose our user is single thread for simplicity.
+
+    Socket layer will heavily interact with the tcp layer. 
+    1. a socket may actively send operation to a tcp connection.
+    2. a tcp connection may be sent to a socket for accept()
+*/
+
+
+
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
@@ -57,3 +71,12 @@ int __wrap_close(int fildes);
 * 9699919799/functions/getaddrinfo.html) 
 */
 int __wrap_getaddrinfo(const char *node, const char *service, const struct addrinfo *hints, struct addrinfo **res);
+
+int __wrap_setsockopt(int socket, int level, int option_name, const void *option_value, socklen_t option_len);
+
+
+// my custom interface
+struct SocketBlock;
+struct TCB;
+
+int socket_recv_new_tcp_conn(SocketBlock *sb, TCB* tcb);

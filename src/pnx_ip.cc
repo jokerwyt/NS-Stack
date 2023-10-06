@@ -6,6 +6,7 @@
 #include "pnx_utils.h"
 #include "packetio.h"
 #include "device.h"
+#include "tcp.h"
 
 #include <arpa/inet.h>
 
@@ -57,7 +58,7 @@ static bool verify_iphd_checksum(struct iphdr *ip_header) {
     return ip_header->check == calc_iphd_checksum(ip_header);
 }
 
-int sendIPPacket(const in_addr src, const in_addr dest, int proto,
+int ip_send_packet(const in_addr src, const in_addr dest, int proto,
                  const void* buf, int len) {
     // steps.
     // 1. query routing table, get the target ip.
@@ -178,7 +179,12 @@ int ip_packet_handler(const void *buf, int len) {
         logInfo("a IP packet for me: %s. src=%s", 
             inet_ntoa_safe(in_addr{ip_header->daddr}).get(), 
             inet_ntoa_safe(in_addr{ip_header->saddr}).get());
+        
 
+        // pass it to the upper layer.
+        tcp_segment_handler(buf + sizeof(iphdr), len);
+        
+        // if the callback is set, call it.
         if (ip_callback.load() != nullptr) {
             return ip_callback.load()(buf, len);
         }

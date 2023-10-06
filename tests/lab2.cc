@@ -89,7 +89,7 @@ int main(int argc, char **args) {
 iampadding iampadding iampadding iampadding iampadding iampadding", 
             time);
 
-            sendIPPacket(*dev_ip(0), ip, IPPROTO_TCP, msg, strlen(msg));
+            ip_send_packet(*dev_ip(0), ip, IPPROTO_TCP, msg, strlen(msg));
             sleep(1);
         }
     }

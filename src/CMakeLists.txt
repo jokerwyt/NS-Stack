@@ -6,4 +6,7 @@ add_library(Pnx STATIC
     routing.cc
     logger.cc
     pnx_utils.cc
+    pnx_socket.cc
+    pnx_tcp.cc
+    pnx_tcp_tcb.cc
 )

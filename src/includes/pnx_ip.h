@@ -19,13 +19,14 @@
 * @param len Length of IP payload
 * @return 0 on success, -1 on error.
 */
-int sendIPPacket(const struct in_addr src, const struct in_addr dest,
+int ip_send_packet(const struct in_addr src, const struct in_addr dest,
      int proto, const void *buf, int len);
 
 
 int ip_packet_handler(const void* buf, int len);
 
 // return 0 for success.
+// buf points to the beginning of the IP packet (include IP header).
 typedef int (*ip_packet_callback)(const void* buf, int len);
 
 int set_ip_packet_callback(ip_packet_callback cb);
