@@ -28,3 +28,6 @@ std::unique_ptr<const char[]> inet_ntoa_safe(const struct in_addr in);
 
 // 1 for success.
 bool split_ip_subnet(const char * ip_subnet, char *ip, int *subnet_len);
+
+
+int pnx_init_all_devices();

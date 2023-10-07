@@ -77,3 +77,29 @@ bool split_ip_subnet(const char* ip_subnet, char* ip, int* subnet_len) {
     
     return true;
 }
+
+#include "device.h"
+#include "logger.h"
+
+int pnx_init_all_devices() {
+    int dcnt = 0;
+    char **devices = get_host_device_lists(&dcnt);
+    for (int i = 0; i < dcnt; i++) {
+        // if start with veth or eth, add it
+        if (strncmp(devices[i], "veth", 4) == 0 || strncmp(devices[i], "eth", 3) == 0) {
+            logInfo("adding device %s", devices[i]);
+            int id = add_device(devices[i]);
+            if (id < 0) {
+                logError("fail to add device %s", devices[i]);
+                return -1;
+            } else {
+                logInfo("device %s added, id = %d", devices[i], id);
+            }
+        }
+    }
+    free(devices);
+
+    // sleep for a while to wait for the ARP table, routing table ready
+    sleep(1);
+    return 0;
+}

@@ -458,9 +458,13 @@ int distance_upd_handler(int dev_id, const char *payload, size_t payload_len) {
 static const int kRoutingPeriod = 1000; // ms
 int fire_distance_upd_daemon() {
     std::thread t = std::thread([]() {
+        // int upd_times = 10;
         while (true) {
             std::this_thread::sleep_for(std::chrono::milliseconds(kRoutingPeriod));
-            
+            // if (--upd_times == 0) {
+            //     // stop the thread.
+            //     return;
+            // }
             // send distance upd to all neighbors.
             // broadcast to all devices.
             std::string dv_bytes = distance_vec_to_bytes();

@@ -10,8 +10,10 @@ void str_echo(int sockfd) {
   size_t acc = 0;
   again:
   while ((n = read(sockfd, buf, MAXLINE)) > 0) {
+    // printf("have read back: %zu\n", acc);
     writen(sockfd, buf, n);
     acc += n;
+    // printf("have sent back: %zu\n", acc);
   }
   printf("all: %zu\n", acc);
   if (n < 0 && errno == EINTR) {

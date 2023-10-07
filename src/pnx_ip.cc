@@ -6,7 +6,7 @@
 #include "pnx_utils.h"
 #include "packetio.h"
 #include "device.h"
-#include "tcp.h"
+#include "pnx_tcp.h"
 
 #include <arpa/inet.h>
 
@@ -58,8 +58,10 @@ static bool verify_iphd_checksum(struct iphdr *ip_header) {
     return ip_header->check == calc_iphd_checksum(ip_header);
 }
 
-int ip_send_packet(const in_addr src, const in_addr dest, int proto,
-                 const void* buf, int len) {
+static int _ip_send_packet(const in_addr src, const in_addr dest, int proto,
+                 std::shared_ptr<char[]> buf, int len) {
+
+
     // steps.
     // 1. query routing table, get the target ip.
     // 2. ARP query, get the target mac.
@@ -106,10 +108,25 @@ int ip_send_packet(const in_addr src, const in_addr dest, int proto,
 
     ip_header->check = calc_iphd_checksum(ip_header);
 
-    memcpy(packet + sizeof(struct iphdr), buf, len);
+    memcpy(packet + sizeof(struct iphdr), buf.get(), len);
 
     // send the packet
     return send_frame(packet, ntohs(ip_header->tot_len), ETHERTYPE_IP, &dest_mac, dev_id);
+}
+
+#include <thread>
+
+int ip_send_packet(const in_addr src, const in_addr dest, int proto,
+                 std::shared_ptr<char[]> buf, int len) {
+    // all sending task is forward to a new thread to prevent ARP deadlock.
+    // TODO: fix this damn design. it will harm the performance heavily. 
+    std::thread t = std::thread([=]() {
+        if (_ip_send_packet(src, dest, proto, buf, len) != 0) {
+            logWarning("fail to send IP packet to %s", inet_ntoa_safe(dest).get());
+        }
+    });
+    t.detach();
+    return 0;
 }
 
 
@@ -182,7 +199,8 @@ int ip_packet_handler(const void *buf, int len) {
         
 
         // pass it to the upper layer.
-        tcp_segment_handler(buf + sizeof(iphdr), len);
+        tcp_segment_handler((char*)buf + ip_header->ihl * 4, len - ip_header->ihl * 4, 
+            in_addr{ip_header->saddr}, in_addr{ip_header->daddr});
         
         // if the callback is set, call it.
         if (ip_callback.load() != nullptr) {

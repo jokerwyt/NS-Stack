@@ -32,6 +32,8 @@ include_directories(src/includes thirdparty/includes)
 find_package(Threads REQUIRED)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
 
+# add LDFLAGS
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--wrap=socket -Wl,--wrap=bind -Wl,--wrap=listen -Wl,--wrap=connect -Wl,--wrap=accept -Wl,--wrap=read -Wl,--wrap=write -Wl,--wrap=close -Wl,--wrap=getaddrinfo -Wl,--wrap=setsockopt")
 
 
 add_subdirectory(src)

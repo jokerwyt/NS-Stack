@@ -13,7 +13,7 @@
 #include "logger.h"
 #include "rustex.h"
 #include "pnx_tcp.h"
-
+#include "device.h"
 
 struct SocketBlock {
     int fd;
@@ -43,8 +43,20 @@ rustex::mutex<std::unordered_map<int, SocketBlock*>> sockets;
 
 int __wrap_socket(int domain, int type, int protocol) {
     if (domain != AF_INET || type != SOCK_STREAM || protocol != 0) {
-        errno = EAFNOSUPPORT;
-        return -1;
+        // use real socket to handle it.
+        return __real_socket(domain, type, protocol);
+    }
+
+    // this function is the entry of the whole network stack for applications.
+    // we add all devices here. 
+    // TODO: handle some race.
+    static bool pnx_initialized = false;
+    if (pnx_initialized == false) {
+        if (pnx_init_all_devices() != 0) {
+            logError("device initialization failed.");
+            return -1;
+        }
+        pnx_initialized = true;
     }
 
     auto block = new SocketBlock();
@@ -68,9 +80,14 @@ static SocketBlock* getSocketBlock(int socket) {
 }
 
 int __wrap_bind(int socket, const struct sockaddr *address, socklen_t address_len) {
+
+    if (socket < kSocketMinFd) {
+        // use real bind to handle it.
+        return __real_bind(socket, address, address_len);
+    }
+
     auto *sb = getSocketBlock(socket);
     if (sb == nullptr) {
-        // TODO: handle system fd.
         errno = EBADF;
         return -1;
     }
@@ -87,16 +104,42 @@ int __wrap_bind(int socket, const struct sockaddr *address, socklen_t address_le
         return -1;
     }
 
-    memcpy(&sb->addr, address, sizeof(sockaddr_in));
+    // memcpy(&sb->addr, address, sizeof(sockaddr_in));
+    // We assume that the address is always not given by users.
+    // But port must be given by the user.
+    sockaddr_in *addr = (sockaddr_in*)address;
+
+    if (dev_ip(0) == nullptr) {
+        logWarning("device 0 is not initialized.");
+        errno = EINVAL;
+        return -1;
+    }
+
+    sb->addr.sin_family = AF_INET;
+    sb->addr.sin_addr.s_addr = dev_ip(0)->s_addr; 
+    sb->addr.sin_port = addr->sin_port;
+
+
     sb->state = SocketBlock::PASSIVE_BINDED;
     return 0;
 }
 
 int __wrap_listen(int socket, int backlog) {
+
+    if (socket < kSocketMinFd) {
+        // use real listen to handle it.
+        return __real_listen(socket, backlog);
+    }
+
     auto *sb = getSocketBlock(socket);
     if (sb == nullptr) {
-        // TODO: handle system fd.
         errno = EBADF;
+        return -1;
+    }
+
+    if (backlog <= 0) {
+        logWarning("invalid backlog.");
+        errno = EINVAL;
         return -1;
     }
 
@@ -117,9 +160,14 @@ int __wrap_listen(int socket, int backlog) {
 }
 
 int __wrap_connect(int socket, const struct sockaddr *address, socklen_t address_len) {
+
+    if (socket < kSocketMinFd) {
+        // use real connect to handle it.
+        return __real_connect(socket, address, address_len);
+    }
+
     auto *sb = getSocketBlock(socket);
     if (sb == nullptr) {
-        // TODO: handle system fd.
         errno = EBADF;
         return -1;
     }
@@ -136,6 +184,17 @@ int __wrap_connect(int socket, const struct sockaddr *address, socklen_t address
         return -1;
     }
 
+    if (dev_ip(0) == nullptr) {
+        logWarning("device 0 is not initialized.");
+        errno = EINVAL;
+        return -1;
+    }
+
+    // fill an client-side address.
+    sb->addr.sin_family = AF_INET;
+    sb->addr.sin_addr.s_addr = dev_ip(0)->s_addr;
+    sb->addr.sin_port = rand() % 10000 + 10000; // ignore conflit for simplicity.
+
     sb->state = SocketBlock::ACTIVE;
     sb->tcb = tcp_open(&sb->addr, (const sockaddr_in*)address, nullptr);
     if (sb->tcb == nullptr) {
@@ -144,13 +203,22 @@ int __wrap_connect(int socket, const struct sockaddr *address, socklen_t address
         return -1;
     }
 
+    // wait until the connection is established.
+    while (tcp_getstate(sb->tcb) != TCP_ESTABLISHED) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
     return 0;
 }
 
-int __wrap_accept(int socket, struct sockaddr *address, socklen_t *address_len) {
+int __wrap_accept(int socket, struct sockaddr *remote_addr, socklen_t *address_len) {
+
+    if (socket < kSocketMinFd) {
+        // use real accept to handle it.
+        return __real_accept(socket, remote_addr, address_len);
+    }
+
     auto *sb = getSocketBlock(socket);
     if (sb == nullptr) {
-        // TODO: handle system fd.
         errno = EBADF;
         return -1;
     }
@@ -161,19 +229,18 @@ int __wrap_accept(int socket, struct sockaddr *address, socklen_t *address_len) 
         return -1;
     }
 
-    if (sizeof(socklen_t) != sizeof(sockaddr_in)) {
-        logWarning("invalid address length.");
-        errno = EINVAL;
-        return -1;
-    }
-
     TCB* tcb = nullptr;
     while (tcb == nullptr) {
         {
             auto ac = sb->accepting.lock_mut();
-            if (ac->empty() == false) {
-                tcb = ac->back();
-                ac->pop_back();
+            // find an ESTABLISHED connection.
+
+            for (auto it = ac->begin(); it != ac->end(); it++) {
+                if (tcp_getstate(*it) == TCP_ESTABLISHED) {
+                    tcb = *it;
+                    ac->erase(it);
+                    break;
+                }
             }
         }
         if (tcb == nullptr)
@@ -188,13 +255,22 @@ int __wrap_accept(int socket, struct sockaddr *address, socklen_t *address_len) 
 
     sockets.lock_mut()->insert({conn_sb->fd, conn_sb});
 
+    *address_len = sizeof(sockaddr_in);
+    auto tmp = tcp_getpeeraddress(tcb);
+    memcpy(remote_addr, &tmp, sizeof(sockaddr_in));
+
     return conn_sb->fd;
 }
 
 ssize_t __wrap_read(int fildes, void *buf, size_t nbyte) {
+
+    if (fildes < kSocketMinFd) {
+        // use real read to handle it.
+        return __real_read(fildes, buf, nbyte);
+    }
+
     auto *sb = getSocketBlock(fildes);
     if (sb == nullptr) {
-        // TODO: handle system fd.
         errno = EBADF;
         return -1;
     }
@@ -205,13 +281,32 @@ ssize_t __wrap_read(int fildes, void *buf, size_t nbyte) {
         return -1;
     }
 
-    return tcp_receive(sb->tcb, buf, nbyte);
+    int ret = 0;
+    while ((ret = tcp_receive(sb->tcb, buf, nbyte)) <= 0) {
+        if (ret < 0) {
+            return -1;
+        }
+
+        int state = tcp_getstate(sb->tcb);
+        if (tcp_no_data_incoming_state(state)) {
+            return 0;
+        } else {
+            // blocking.
+            continue;
+        }
+    }
+    return ret;
 }
 
 ssize_t __wrap_write(int fildes, const void *buf, size_t nbyte) {
+
+    if (fildes < kSocketMinFd) {
+        // use real read to handle it.
+        return __real_write(fildes, buf, nbyte);
+    }
+
     auto *sb = getSocketBlock(fildes);
     if (sb == nullptr) {
-        // TODO: handle system fd.
         errno = EBADF;
         return -1;
     }
@@ -222,13 +317,37 @@ ssize_t __wrap_write(int fildes, const void *buf, size_t nbyte) {
         return -1;
     }
 
-    return tcp_send(sb->tcb, buf, nbyte);
+    int rest_len = nbyte;
+    int done = 0;
+    while (rest_len != 0) {
+        int use = tcp_send(sb->tcb, (char*) buf + done, rest_len);
+        if (use == 0) {
+            int state = tcp_getstate(sb->tcb);
+            if (tcp_can_send(state)) {
+                // keep sending.
+                continue;
+            } else {
+                return done;
+            }
+        } else if (use < 0) {
+            return -1;
+        } else {
+            done += use;
+            rest_len -= use;
+        }
+    }
+    return nbyte;
 }
 
 int __wrap_close(int fildes) {
+
+    if (fildes < kSocketMinFd) {
+        // use real read to handle it.
+        return __real_close(fildes);
+    }
+
     auto *sb = getSocketBlock(fildes);
     if (sb == nullptr) {
-        // TODO: handle system fd.
         errno = EBADF;
         return -1;
     }
@@ -253,11 +372,19 @@ int __wrap_close(int fildes) {
 }
 
 int __wrap_getaddrinfo(const char *node, const char *service, const struct addrinfo *hints, struct addrinfo **res) {
-    logWarning("unimplemented getaddrinfo");
-    return 0;
+    return __real_getaddrinfo(node, service, hints, res);
+
+    // { (void)node; (void)service; (void)hints; (void)res; } // make compiler happy
+    // logWarning("unimplemented getaddrinfo");
+    // return 0;
 }
 
 int __wrap_setsockopt(int socket, int level, int option_name, const void *option_value, socklen_t option_len) {
+    if (socket < kSocketMinFd) {
+        // use real setsockopt to handle it.
+        return __real_setsockopt(socket, level, option_name, option_value, option_len);
+    }
+    { (void)socket; (void)level; (void)option_name; (void)option_value; (void)option_len; } // make compiler happy
     logWarning("unimplemented setsockopt");
     return 0;
 }
@@ -271,7 +398,7 @@ int socket_recv_new_tcp_conn(SocketBlock *sb, TCB* tcb) {
 
     {
         auto ac = sb->accepting.lock_mut();
-        if (ac->size() >= sb->backlog) {
+        if (ac->size() >= (size_t)sb->backlog) {
             logWarning("passive socket backlog is full.");
             errno = EINVAL;
             return -1;
@@ -279,6 +406,7 @@ int socket_recv_new_tcp_conn(SocketBlock *sb, TCB* tcb) {
         ac->push_back(tcb);
     }
 
+    logInfo("a new connection is added to socket %d", sb->fd);
     return 0;
 }
 

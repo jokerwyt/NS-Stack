@@ -8,6 +8,7 @@
 #include <netinet/ip.h>
 #include <functional>
 #include <atomic>
+#include <memory>
 
 
 /**
@@ -20,7 +21,7 @@
 * @return 0 on success, -1 on error.
 */
 int ip_send_packet(const struct in_addr src, const struct in_addr dest,
-     int proto, const void *buf, int len);
+     int proto, std::shared_ptr<char[]> buf, int len);
 
 
 int ip_packet_handler(const void* buf, int len);

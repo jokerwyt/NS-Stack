@@ -3,9 +3,11 @@
 #include <memory>
 #include <netinet/tcp.h>
 #include <cstring>
+#include "pnx_utils.h"
+#include "logger.h"
 
 
-static uint16_t _tcp_checksum(const void* buf, size_t len, const struct in_addr& src, const struct in_addr& dst) {
+static uint16_t _tcp_checksum(const void* buf, int len, const struct in_addr& src, const struct in_addr& dst) {
     // calc the checksum of the ip header using the RFC specified algorithm.
     // https://tools.ietf.org/html/rfc1071
 
@@ -64,7 +66,7 @@ struct Segment {
     }
 
     // construct from a buffer
-    Segment(void *buf, size_t len, const struct in_addr& src, const struct in_addr &dst) : src(src), dst(dst) {
+    Segment(const void *buf, size_t len, const struct in_addr& src, const struct in_addr &dst) : src(src), dst(dst) {
         // copy from buf to this->buf
         this->buf = std::shared_ptr<char[]>(new char[len]);
         memcpy(this->buf.get(), buf, len);
@@ -74,14 +76,23 @@ struct Segment {
 
 
     void fill_in_tcp_checksum() {
-        assert(this->len >= sizeof(struct tcphdr));
+        assert(this->len >= (int)sizeof(struct tcphdr));
         assert(this->src.s_addr != 0 && this->dst.s_addr != 0);
-
-        this->hdr->check = 0;
+        logTrace("fill in tcp checksum. segment_len=%llu, src=%s, dst=%s", this->len, inet_ntoa_safe(this->src).get(), inet_ntoa_safe(this->dst).get());
         this->hdr->check = _tcp_checksum(this->buf.get(), this->len, this->src, this->dst);
     }
 
     bool have_payload() {
-        return this->len > sizeof(struct tcphdr);
+        return this->len > (int)sizeof(struct tcphdr);
+    }
+
+    inline void ntoh() {
+        this->hdr->seq = ntohl(this->hdr->seq);
+        this->hdr->ack_seq = ntohl(this->hdr->ack_seq);
+        this->hdr->window = ntohs(this->hdr->window);
+    }
+
+    inline bool need_to_ack() {
+        return have_payload() || this->hdr->fin || this->hdr->syn;
     }
 };

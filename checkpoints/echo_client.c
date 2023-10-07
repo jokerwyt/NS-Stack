@@ -31,12 +31,14 @@ void str_cli(FILE *fp, int sockfd, int sleep_) {
   char recvline[MAXLINE];
   while (fgets(sendline, MAXLINE, fp) != NULL) {
     writen(sockfd, sendline, strlen(sendline));
+    printf("sent: %s", sendline);
     if (sleep_) sleep(1);
 
     if (readline(sockfd, recvline, MAXLINE) == 0) {
       printf("str_cli: server terminated prematurely\n");
       exit(1);
     }
+    printf("recved: %s", recvline);
 
     // fputs(recvline, stdout);
   }

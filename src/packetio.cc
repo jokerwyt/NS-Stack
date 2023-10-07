@@ -36,11 +36,11 @@ int send_frame(const void* buf, int len, int ethtype, const ether_addr* destmac,
 
     memcpy(frame + ETH_HLEN, buf, len);
     size_t padding = 0;
-    if (frame_length < ETHER_MIN_LEN) {
-        logDebug("try to send a too small eth frame (len %d). apply padding.", frame_length);
-        padding = ETHER_MIN_LEN - frame_length;
-        memset(frame + ETH_HLEN + len, 0, padding);
-    }
+    // if (frame_length < ETHER_MIN_LEN) {
+    //     logTrace("try to send a too small eth frame (len %d). apply padding.", frame_length);
+    //     padding = ETHER_MIN_LEN - frame_length;
+    //     memset(frame + ETH_HLEN + len, 0, padding);
+    // }
     
     memset(frame + ETH_HLEN + len, 0, ETHER_CRC_LEN); // we dont calc CRC yet.
 
@@ -86,7 +86,7 @@ static void frame_handler(
 
     // IP
     if (ntohs(eth_header->ether_type) == ETHERTYPE_IP) {
-        if (ip_packet_handler(bytes + ETH_HLEN, h->caplen - ETH_HLEN) != 0) {
+        if (ip_packet_handler(bytes + ETH_HLEN, h->caplen - ETH_HLEN - ETHER_CRC_LEN) != 0) {
             logError("upper layer fails to handle IP packet");
         }
     }

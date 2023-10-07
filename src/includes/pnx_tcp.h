@@ -29,16 +29,19 @@ Resource management.
 
 struct TCB;
 struct Segment;
+struct SocketBlock;
 
 // interface for socket layer.
 TCB* tcp_open(const struct sockaddr_in *local, const struct sockaddr_in *remote, std::shared_ptr<Segment> syn);
-bool tcp_register_listening_socket(SocketBlock *sb, uint16_t port /* network order */);
-bool tcp_unregister_listening_socket(SocketBlock *sb, uint16_t port /* network order */);
+int tcp_register_listening_socket(SocketBlock *sb, uint16_t port /* network order */);
+int tcp_unregister_listening_socket(SocketBlock *sb, uint16_t port /* network order */);
 int tcp_close(TCB* tcb);
 int tcp_send(TCB* tcb, const void *buf, int len);
 int tcp_receive(TCB* tcb, void *buf, int len);
 struct sockaddr_in tcp_getpeeraddress(TCB* tcb);
-
+int tcp_getstate(TCB* tcb);
+int tcp_no_data_incoming_state(int state);
+int tcp_can_send(int state);
 
 // interface for ip layer.
 int tcp_segment_handler(const void* buf, int len, const struct in_addr& src, const struct in_addr& dst);

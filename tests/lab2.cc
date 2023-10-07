@@ -83,13 +83,13 @@ int main(int argc, char **args) {
         sleep(5);
         while (1) {
             long long time = get_time_us();
-            char msg[1000];
-            sprintf(msg, 
+            std::shared_ptr<char[]> msg = std::make_shared<char[]>(1024);
+            sprintf(msg.get(), 
 "%lld hello world! iampadding iampadding iampadding \
 iampadding iampadding iampadding iampadding iampadding iampadding", 
             time);
 
-            ip_send_packet(*dev_ip(0), ip, IPPROTO_TCP, msg, strlen(msg));
+            ip_send_packet(*dev_ip(0), ip, IPPROTO_TCP, msg, strlen(msg.get()));
             sleep(1);
         }
     }

@@ -4,6 +4,7 @@
 
 #include "pnx_tcp_const.h"
 #include "ringbuffer.h"
+#include <deque>
 
 struct TCB {
     int state;
@@ -37,7 +38,7 @@ struct TCB {
         // Otherwise, we flush the send buffer first, and piggyback a FIN in the last packet.
         // bool FIN_waiting;
 
-        // the timer will takes care of this.
+        // when a new seg is sent, this value is set to 0.
         int retrans_count;
 
         // the timer will check this value to see if we need to retransmit.
@@ -53,7 +54,7 @@ struct TCB {
         uint32_t init_seq;
         uint32_t next; // next seq to receive from the remote
         uint32_t window; // receive window
-        RingBuffer<char, kTcpRecvBufferSize> buf;
+        std::deque<char> buf;
     } recv;
 
     std::thread timer;
