@@ -5,11 +5,20 @@
 /* 
     Design Doc of Socket layer.
 
-    We suppose our user is single thread for simplicity.
+Functionality.
+    Provide socket absraction for the application.
 
-    Socket layer will heavily interact with the tcp layer. 
-    1. a socket may actively send operation to a tcp connection.
-    2. a tcp connection may be sent to a socket for accept()
+Users.
+    Socket layer will heavily interact with TCP layer, including:
+        1. a socket may actively send operations to a tcp connection.
+        2. a tcp connection may be sent to a socket for accept()
+
+Synchronizations.
+    The module provides internal synchronizations, i.e. all functions are thread-safe.
+
+Resource management.
+    For simplicify, we suppose the system have enough resource and do not need to recycle.
+
 */
 
 
@@ -80,3 +89,4 @@ struct SocketBlock;
 struct TCB;
 
 int socket_recv_new_tcp_conn(SocketBlock *sb, TCB* tcb);
+struct sockaddr_in socket_get_localaddress(SocketBlock *sb);

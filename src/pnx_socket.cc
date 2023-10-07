@@ -108,7 +108,7 @@ int __wrap_listen(int socket, int backlog) {
 
     sb->state = SocketBlock::PASSIVE_LISTENING;
     sb->backlog = backlog;
-    if (tcp_register_listening_socket(sb) != 0) {
+    if (tcp_register_listening_socket(sb, sb->addr.sin_port) != 0) {
         logWarning("fail to register listening socket.");
         errno = EINVAL;
         return -1;
@@ -137,7 +137,7 @@ int __wrap_connect(int socket, const struct sockaddr *address, socklen_t address
     }
 
     sb->state = SocketBlock::ACTIVE;
-    sb->tcb = tcp_active_open(&sb->addr, (const sockaddr_in*)address);
+    sb->tcb = tcp_open(&sb->addr, (const sockaddr_in*)address, nullptr);
     if (sb->tcb == nullptr) {
         logWarning("fail to open a TCP connection.");
         errno = EINVAL;
@@ -236,7 +236,7 @@ int __wrap_close(int fildes) {
     if (sb->state == SocketBlock::ACTIVE) {
         tcp_close(sb->tcb);
     } else if (sb->state == SocketBlock::PASSIVE_BINDED || sb->state == SocketBlock::PASSIVE_LISTENING) {
-        tcp_unregister_listening_socket(sb);
+        tcp_unregister_listening_socket(sb, sb->addr.sin_port);
         auto ac = sb->accepting.lock_mut();
         while (!ac->empty()) {
             tcp_close(ac->back());
@@ -264,9 +264,9 @@ int __wrap_setsockopt(int socket, int level, int option_name, const void *option
 
 int socket_recv_new_tcp_conn(SocketBlock *sb, TCB* tcb) {
     if (sb->state != SocketBlock::PASSIVE_LISTENING) {
-        logWarning("only a passive-listening socket can accept new connection.");
-        errno = EINVAL;
-        return -1;
+      logWarning("only a passive-listening socket can accept new connection.");
+      errno = EINVAL;
+      return -1;
     }
 
     {
@@ -280,4 +280,9 @@ int socket_recv_new_tcp_conn(SocketBlock *sb, TCB* tcb) {
     }
 
     return 0;
+}
+
+
+struct sockaddr_in socket_get_localaddress(SocketBlock * sb) {
+    return sb->addr;
 }

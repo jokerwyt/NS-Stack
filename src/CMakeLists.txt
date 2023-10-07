@@ -8,5 +8,4 @@ add_library(Pnx STATIC
     pnx_utils.cc
     pnx_socket.cc
     pnx_tcp.cc
-    pnx_tcp_tcb.cc
 )
