@@ -58,20 +58,25 @@ int main(int argc, char *argv[]) {
     gettimeofday(&start_ts,NULL);
 
     fill_line();
-    printf("%d sending ...\n", loop);
+    printf("sending ...\n");
+    // printf("%d sending ...\n", loop);
     if (writen(sockfd, sendline, SIZE) < 0) {
-      printf("%d writen error\n", loop);
+      printf("writen error\n");
+      // printf("%d writen error\n", loop);
     }
-    printf("%d receiving ...\n", loop);
+    printf("receiving ...\n");
+    // printf("%d receiving ...\n", loop);
     if (readn(sockfd, recvline, SIZE) != SIZE) {
-      printf("%d readn error\n", loop);
+      printf("readn error\n");
+      // printf("%d readn error\n", loop);
     }
 
     gettimeofday(&end_ts,NULL);
 
     t = timeval_subtract(&end_ts, &start_ts);
     v = SIZE / t;
-    printf("%d %.2lf KB/s\n", loop, v / 1000);
+    printf("%.2lf KB/s\n", v / 1000);
+    // printf("%d %.2lf KB/s\n", loop, v / 1000);
 
     cmp_line();
   }

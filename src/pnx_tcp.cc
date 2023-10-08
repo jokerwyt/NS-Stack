@@ -47,8 +47,8 @@ static int _tcp_timer(TCB *tcb) {
     std::lock_guard<std::mutex> lock(tcp_lock);
 
     if (tcb->state == TCP_CLOSE) {
-        // do nothing
-        return 0;
+        // stop the timer.
+        return -1;
     }
 
     if (tcb->state == TCP_TIME_WAIT) {
@@ -138,7 +138,7 @@ static int _init_TCB(TCB* tcb, const sockaddr_in *local, const sockaddr_in *remo
     }
 
     tcb->timer = std::thread{[tcb]() {
-        while (1) {
+        while (tcb->timer_stop.load() == false) {
             // sleep 10 ms
             std::this_thread::sleep_for(std::chrono::milliseconds(10)); 
 
@@ -343,7 +343,7 @@ int tcp_unregister_listening_socket(SocketBlock *sb, uint16_t port) {
 }
 
 int tcp_close(TCB *tcb) {
-    std::lock_guard<std::mutex> lock(tcp_lock);
+    std::unique_lock<std::mutex> lock(tcp_lock);
     switch (tcb->state) {
         case TCP_CLOSE:
         case TCP_FIN_WAIT1:
@@ -351,28 +351,39 @@ int tcp_close(TCB *tcb) {
         case TCP_CLOSING:
         case TCP_LAST_ACK:
         case TCP_TIME_WAIT:
-            return 0;
+            break;
 
         case TCP_SYN_SENT:
         case TCP_LISTEN:
 
             logDebug("state trans: %d -> TCP_CLOSE", tcb->state);
             tcb->state = TCP_CLOSE;
-            return 0;
+            break;
 
         case TCP_SYN_RECV:
         case TCP_ESTABLISHED:
             logDebug("state trans: %d -> TCP_FIN_WAIT1", tcb->state);
             tcb->state = TCP_FIN_WAIT1;
-            return _tcp_send_ctrl(tcb, Seq{.syn = 0, .fin = 1, .byte = 0});
-
+            if (_tcp_send_ctrl(tcb, Seq{.syn = 0, .fin = 1, .byte = 0}) < 0) {
+                logWarning("tcp_close: fail to send FIN");
+                return -1;
+            }
+            break;
         case TCP_CLOSE_WAIT:
             logDebug("state trans: _ -> TCP_LAST_ACK", tcb->state);
             tcb->state = TCP_LAST_ACK;
-            return _tcp_send_ctrl(tcb, Seq{.syn = 0, .fin = 1, .byte = 0});
+            if (_tcp_send_ctrl(tcb, Seq{.syn = 0, .fin = 1, .byte = 0}) < 0) {
+                logWarning("tcp_close: fail to send FIN");
+                return -1;
+            }
+            break;
         default:
-            return 0;
+            return -1;
     }
+    tcb->timer_stop.store(true);
+    lock.unlock();
+    tcb->timer.join();
+    return 0;
 }
 
 int tcp_send(TCB* tcb, const void *buf, int len) {
@@ -705,6 +716,10 @@ int tcp_segment_handler(const void* buf, int len, const struct in_addr& src, con
         SocketBlock *sb = listening_socket[seg->hdr->dest];
         
         TCB *tcb = _tcp_open(&tuple4.local, &tuple4.remote, seg);
+        if (tcb == nullptr) {
+            logWarning("tcp_segment_handler: reject to open a new connection");
+            return -1;
+        }
         assert(tcb->state == TCP_SYN_RECV); // wait for the ack of syn.
 
         socket_recv_new_tcp_conn(sb, tcb);

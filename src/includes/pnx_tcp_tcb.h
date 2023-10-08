@@ -57,5 +57,6 @@ struct TCB {
         std::deque<char> buf;
     } recv;
 
+    std::atomic<bool> timer_stop = false;
     std::thread timer;
 };

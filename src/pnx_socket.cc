@@ -353,12 +353,18 @@ int __wrap_close(int fildes) {
     }
 
     if (sb->state == SocketBlock::ACTIVE) {
-        tcp_close(sb->tcb);
+        if (tcp_close(sb->tcb) < 0) {
+            logWarning("fail to close a TCP connection.");
+            errno = EINVAL;
+            return -1;
+        }
     } else if (sb->state == SocketBlock::PASSIVE_BINDED || sb->state == SocketBlock::PASSIVE_LISTENING) {
         tcp_unregister_listening_socket(sb, sb->addr.sin_port);
         auto ac = sb->accepting.lock_mut();
         while (!ac->empty()) {
-            tcp_close(ac->back());
+            if (tcp_close(ac->back()) < 0) {
+                logWarning("fail to close a TCP connection.");
+            }
             ac->pop_back();
         }
     } else {
