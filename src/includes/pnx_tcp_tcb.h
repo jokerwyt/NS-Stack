@@ -1,10 +1,24 @@
 #include <netinet/tcp.h>
 #include <thread>
 #include <netinet/in.h>
+#include <deque>
 
 #include "pnx_tcp_const.h"
 #include "ringbuffer.h"
-#include <deque>
+
+
+/* 
+
+# Life cycle of TCBs:
+## start:
+- active open: tcp_open() creates a TCB and returns it to the user.
+- passive open: recv SYN, create a TCB and give it to the listening socket.
+
+## ending:
+- Once the user calls tcp_close(), the TCB becomes an orphan. Remove it from the TCB map.
+- We periodically will check all orphan TCBs and delete those have been CLOSED.
+
+*/
 
 struct TCB {
     int state;
@@ -22,13 +36,13 @@ struct TCB {
         struct Sequence {
             bool syn, fin;
             // only make sense when both syn and fin is 0
-            char byte; 
+            char byte;
 
             bool isCtrl() {
                 return syn != 0 || fin != 0;
             }
         };
-
+        // TODO: this design hinders direct memory copy. move control bits out of sender buffer.
         RingBuffer<Sequence, kTcpSendBufferSize> buf;
 
         Segment last_seg;
@@ -54,9 +68,11 @@ struct TCB {
         uint32_t init_seq;
         uint32_t next; // next seq to receive from the remote
         uint32_t window; // receive window
-        std::deque<char> buf;
+        RingBuffer<char, kTcpRecvBufferSize> buf;
     } recv;
 
     std::atomic<bool> timer_stop = false;
     std::thread timer;
+
+    bool orphan = false;
 };

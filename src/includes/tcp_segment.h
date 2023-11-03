@@ -86,6 +86,10 @@ struct Segment {
         return this->len > (int)sizeof(struct tcphdr);
     }
 
+    size_t payload_len() {
+        return this->len - sizeof(struct tcphdr);
+    }
+
     inline void ntoh() {
         this->hdr->seq = ntohl(this->hdr->seq);
         this->hdr->ack_seq = ntohl(this->hdr->ack_seq);

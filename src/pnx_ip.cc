@@ -7,8 +7,13 @@
 #include "packetio.h"
 #include "device.h"
 #include "pnx_tcp.h"
+#include "ringbuffer.h"
+#include "gracefully_shutdown.h"
 
 #include <arpa/inet.h>
+#include <thread>
+#include <mutex>
+#include <atomic>
 
 
 static std::atomic<ip_packet_callback> ip_callback{nullptr};
@@ -114,18 +119,43 @@ static int _ip_send_packet(const in_addr src, const in_addr dest, int proto,
     return send_frame(packet, ntohs(ip_header->tot_len), ETHERTYPE_IP, &dest_mac, dev_id);
 }
 
-#include <thread>
-
+static BlockingRingBuffer<std::tuple<in_addr, in_addr, int, std::shared_ptr<char[]>, int>, 100> ip_sending_buffer;
 int ip_send_packet(const in_addr src, const in_addr dest, int proto,
                  std::shared_ptr<char[]> buf, int len) {
     // all sending task is forward to a new thread to prevent ARP deadlock.
-    // TODO: fix this damn design. it will harm the performance heavily. 
-    std::thread t = std::thread([=]() {
-        if (_ip_send_packet(src, dest, proto, buf, len) != 0) {
-            logWarning("fail to send IP packet to %s", inet_ntoa_safe(dest).get());
-        }
-    });
-    t.detach();
+
+    static std::mutex mutex;
+    static bool init_done = false;
+    std::lock_guard<std::mutex> lock(mutex);
+    
+    if (init_done == false) {
+        init_done = true;
+        static std::atomic<bool> stop{false};
+
+        std::thread t = std::thread([]() {
+            while (stop.load() == false) {
+                std::optional<std::tuple<in_addr, in_addr, int, std::shared_ptr<char[]>, int>> task;
+                task = ip_sending_buffer.pop();
+                if (!task.has_value()) {
+                    continue;
+                }
+                auto result = _ip_send_packet(std::get<0>(task.value()), 
+                    std::get<1>(task.value()), std::get<2>(task.value()), 
+                    std::get<3>(task.value()), std::get<4>(task.value()));
+                
+                if (result != 0) {
+                    logWarning("fail to send IP packet");
+                }
+            }
+        });
+        t.detach();
+
+        add_exit_clean_up([&]() {
+            stop.store(true);
+        });
+    }
+
+    while (ip_sending_buffer.push(std::make_tuple(src, dest, proto, buf, len)) != true);
     return 0;
 }
 

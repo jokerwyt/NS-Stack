@@ -8,4 +8,5 @@ add_library(Pnx STATIC
     pnx_utils.cc
     pnx_socket.cc
     pnx_tcp.cc
+    gracefully_shutdown.cc
 )

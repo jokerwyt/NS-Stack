@@ -3,6 +3,7 @@
 #include <netinet/in.h>
 #include <deque>
 #include <unordered_map>
+#include <unordered_set>
 #include <assert.h>
 
 
@@ -40,9 +41,15 @@ struct SocketPairHash {
 };
 
 
+// for those TCB owned by a socket.
 std::unordered_map<SocketPair, TCB*, SocketPairHash> active_tcb_map;
 std::unordered_map<uint16_t, SocketBlock*> listening_socket;
+// for those orphaned TCBs
+std::unordered_set<TCB*> orphaned_tcb;
 
+// every TCB has a timer thread for simplicity.
+// 1. check last segment timeout and launch retransmission.
+// 2. when a TCB is both orphaned and CLOSED, remove it from the orphaned_tcb and delete it.
 static int _tcp_timer(TCB *tcb) {
     std::lock_guard<std::mutex> lock(tcp_lock);
 
@@ -413,6 +420,7 @@ int tcp_send(TCB* tcb, const void *buf, int len) {
             break;
         }
     }
+
     if (_tcp_make_sure_sendback(tcb) < 0) {
         logWarning("tcp_send: fail to sendback");
         return -1;
@@ -427,11 +435,15 @@ int tcp_receive(TCB *tcb, void *buf, int len) {
 
     // we only care about recv.buf, no matter what state we are.
     
-    int recv = 0;
-    while (recv < len && !tcb->recv.buf.empty()) {
-        ((char*)buf)[recv++] = tcb->recv.buf.front();
-        tcb->recv.buf.pop_front();
-    }
+    int recv = std::min(len, (int)tcb->recv.buf.size());\
+    assert(true == tcb->recv.buf.pop((char*) buf, recv));
+
+    // int recv = 0;
+    // while (recv < len && !tcb->recv.buf.empty()) {
+    //     ((char*)buf)[recv++] = tcb->recv.buf.front();
+    //     tcb->recv.buf.pop_front();
+    // }
+
     return recv;
 }
 
@@ -537,17 +549,28 @@ static int _tcp_handle_segment_established(TCB *tcb, std::shared_ptr<Segment> se
     // }
 
     if (seg->have_payload())
-        logTrace("tcp_handle_segment_established: recv %llu bytes", seg->len - sizeof(struct tcphdr));
+        logTrace("tcp_handle_segment_established: recv %llu bytes", seg->payload_len());
 
     // push the data into the buffer.
-    for (size_t i = sizeof(struct tcphdr); i < seg->len; i++) {
-        tcb->recv.buf.push_back(((char*)seg->buf.get())[i]);
-        // if (tcb->recv.buf.push(((char*)seg->buf.get())[i]) == 0) {
-        //     logWarning("tcp_handle_segment_established: fail to push data into buffer");
-        //     return -1;
-        // }
-        tcb->recv.next++;
+    // TODO: we only recv whole segment, which is not efficient.
+    // the reason we have to do so: we only accept segments whose first byte is exactly recv.next.
+
+    if (tcb->recv.buf.push_all((char*)seg->buf.get() + sizeof(struct tcphdr), seg->payload_len()) == false) {
+        // buffer overflow, drop this segment.
+        logWarning("tcp_handle_segment_established: recv buffer overflow");
+        return -1;
     }
+
+    tcb->recv.next += seg->payload_len();
+
+    // for (size_t i = sizeof(struct tcphdr); i < seg->len; i++) {
+    //     tcb->recv.buf.push_back(((char*)seg->buf.get())[i]);
+    //     // if (tcb->recv.buf.push(((char*)seg->buf.get())[i]) == 0) {
+    //     //     logWarning("tcp_handle_segment_established: fail to push data into buffer");
+    //     //     return -1;
+    //     // }
+    //     tcb->recv.next++;
+    // }
 
     // handle fin
     if (seg->hdr->fin == 1) {

@@ -1,5 +1,5 @@
 
-all: echo_client echo_server perf_client perf_server
+all: echo_client echo_server perf_client perf_server robust_test_client robust_test_server
 
 
 CFLAGS = -g -O0
@@ -15,5 +15,12 @@ LIBS += ../build/src/libPnx.a -lpcap -lpthread
 %: %.c ../build/src/libPnx.a
 	g++ -o $@ $^ unp.c $(LIBS) $(CFLAGS) $(LDFLAGS) 
 
+
+robust_test_client: robust_test_client.cpp ../build/src/libPnx.a
+	g++ -o $@ $^ $(LIBS) $(CFLAGS) $(LDFLAGS) 
+	
+robust_test_server: robust_test_server.cpp ../build/src/libPnx.a
+	g++ -o $@ $^ $(LIBS) $(CFLAGS) $(LDFLAGS) 
+
 clean:
-	rm -f echo_client echo_server perf_client perf_server
+	rm -f echo_client echo_server perf_client perf_server robust_test_client robust_test_server
