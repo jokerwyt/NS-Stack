@@ -175,4 +175,9 @@ public:
         cv_for_push.notify_one();
         return ret;
     }
+
+    size_t size() {
+        std::unique_lock<std::mutex> lock(mutex);
+        return RingBuffer<T, Capacity>::size();
+    }
 };

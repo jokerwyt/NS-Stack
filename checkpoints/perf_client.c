@@ -42,8 +42,11 @@ int main(int argc, char *argv[]) {
   int loop;
   
   if (argc != 2) {
-    printf("usage: %s <IPaddress>\n", argv[0]);
-    return -1;
+    // set default ip address 10.100.1.1
+    argv[1] = "10.100.1.1";
+
+    // printf("usage: %s <IPaddress>\n", argv[0]);
+    // return -1;
   }
 
   sockfd = Socket(AF_INET, SOCK_STREAM, 0);

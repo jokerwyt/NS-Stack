@@ -15,11 +15,16 @@
 #include "pnx_socket.h"
 #include "logger.h"
 #include "pnx_utils.h"
+#include "gracefully_shutdown.h"
+#include "rustex.h"
 
 
 using Seq = TCB::Sender::Sequence;
 
-std::mutex tcp_lock;
+static std::mutex tcp_lock;
+static BlockingRingBuffer<TCB*, 100> orphaned_tcb;
+static std::thread tcb_recycler;
+static std::atomic<bool> tcb_recycler_can_stop{false};
 
 struct SocketPair {
     struct sockaddr_in local;
@@ -40,22 +45,57 @@ struct SocketPairHash {
     }
 };
 
-
 // for those TCB owned by a socket.
-std::unordered_map<SocketPair, TCB*, SocketPairHash> active_tcb_map;
-std::unordered_map<uint16_t, SocketBlock*> listening_socket;
-// for those orphaned TCBs
-std::unordered_set<TCB*> orphaned_tcb;
+static std::unordered_map<SocketPair, TCB*, SocketPairHash> active_tcb_map{};
+static std::unordered_map<uint16_t, SocketBlock*> listening_socket;
+
+static int _tcp_close(TCB *tcb);
+
+class PnxTcpInitailizer {
+public:
+    static void initialize() {
+        tcb_recycler = std::thread{[&]() {
+            while (tcb_recycler_can_stop.load() == false || orphaned_tcb.size() > 0) {
+                auto task = orphaned_tcb.pop();
+                if (!task.has_value()) continue;
+                auto tcb = task.value();
+                if (tcb->state == TCP_CLOSE) {
+                    // stop the timer. （if it's not stopped yet)
+                    tcb->timer_stop.store(true);
+                    tcb->timer.join();
+                    logInfo("tcb_recycler: delete tcb %x", tcb);
+                    delete tcb;
+                } else {
+                    // put it back. simply busy waiting.
+                    orphaned_tcb.push(tcb);
+                }
+            }
+        }};
+        
+        add_exit_clean_up([&]() {
+            std::unique_lock<std::mutex> lock(tcp_lock);
+
+            // close all active connections.
+            for (auto& pair : active_tcb_map) {
+                TCB* tcb = pair.second;
+                logInfo("tcb_recycler: close tcb %x", tcb);
+                _tcp_close(tcb);
+            }
+            lock.unlock();
+
+            tcb_recycler_can_stop.store(true);
+            tcb_recycler.join();
+
+        }, EXIT_CLEAN_UP_PRIORITY_TCP);
+    }
+};
 
 // every TCB has a timer thread for simplicity.
-// 1. check last segment timeout and launch retransmission.
-// 2. when a TCB is both orphaned and CLOSED, remove it from the orphaned_tcb and delete it.
+// check last segment timeout and launch retransmission.
 static int _tcp_timer(TCB *tcb) {
-    std::lock_guard<std::mutex> lock(tcp_lock);
-
     if (tcb->state == TCP_CLOSE) {
-        // stop the timer.
-        return -1;
+        // we do not need to do anything when the TCB is closed.
+        return 0;
     }
 
     if (tcb->state == TCP_TIME_WAIT) {
@@ -98,6 +138,17 @@ static int _tcp_timer(TCB *tcb) {
 }
 
 static int _init_TCB(TCB* tcb, const sockaddr_in *local, const sockaddr_in *remote, std::shared_ptr<Segment> syn) {
+    // treat this as the start point of the TCP module.
+    static bool init_done = false;
+    static std::mutex mutex;
+    std::lock_guard<std::mutex> lock(mutex);
+
+    if (init_done == false) {
+        init_done = true;
+        PnxTcpInitailizer::initialize();
+    }
+
+
     if (syn == nullptr) {
         // active open
         tcb->state = TCP_SYN_SENT;
@@ -148,12 +199,21 @@ static int _init_TCB(TCB* tcb, const sockaddr_in *local, const sockaddr_in *remo
         while (tcb->timer_stop.load() == false) {
             // sleep 10 ms
             std::this_thread::sleep_for(std::chrono::milliseconds(10)); 
+            
+            std::lock_guard<std::mutex> lock(tcp_lock);
+            if (tcb->state == TCP_CLOSE) {
+                break;
+            }
 
             if (_tcp_timer(tcb) != 0) {
-                logWarning("tcp_timer: fail");
+                logWarning("tcp_timer: error happens");
             }
         }
     }};
+
+    // make sure it's joinable
+    assert(tcb->timer.joinable());
+
     return 0;
 }
 
@@ -349,8 +409,9 @@ int tcp_unregister_listening_socket(SocketBlock *sb, uint16_t port) {
     return 0;
 }
 
-int tcp_close(TCB *tcb) {
-    std::unique_lock<std::mutex> lock(tcp_lock);
+static int _tcp_close(TCB *tcb) {
+    // close the connection as soon as possible, and then recycle it.
+    // send FIN and wait for CLOSED state.
     switch (tcb->state) {
         case TCP_CLOSE:
         case TCP_FIN_WAIT1:
@@ -387,11 +448,23 @@ int tcp_close(TCB *tcb) {
         default:
             return -1;
     }
-    tcb->timer_stop.store(true);
-    lock.unlock();
-    tcb->timer.join();
+
+    // insert into orphaned_tcb 
+    orphaned_tcb.push(tcb);
     return 0;
 }
+
+int tcp_close(TCB *tcb) {
+    std::unique_lock<std::mutex> lock(tcp_lock);
+
+    // dont move this into _tcp_close since when we clean up, 
+    // we iterate active_tcb_map and _tcp_close it.
+    SocketPair pair{tcb->local, tcb->remote};
+    active_tcb_map.erase(pair);
+
+    return _tcp_close(tcb);
+}
+
 
 int tcp_send(TCB* tcb, const void *buf, int len) {
     // send is a non-blocking interface.

@@ -48,9 +48,11 @@ int __wrap_socket(int domain, int type, int protocol) {
     }
 
     // this function is the entry of the whole network stack for applications.
-    // we add all devices here. 
-    // TODO: handle some race.
+    // we add all devices here.
     static bool pnx_initialized = false;
+    static std::mutex mutex;
+    std::lock_guard<std::mutex> lock(mutex);
+    
     if (pnx_initialized == false) {
         if (pnx_init_all_devices() != 0) {
             logError("device initialization failed.");

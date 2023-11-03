@@ -73,6 +73,4 @@ struct TCB {
 
     std::atomic<bool> timer_stop = false;
     std::thread timer;
-
-    bool orphan = false;
 };
