@@ -74,8 +74,12 @@ static char* getCurrentTime() {
     return strdup(buffer);
 }
 
+#include <mutex>
+
+static std::mutex log_mutex;
 // 根据日志级别输出相应级别的日志信息
 void _mylog(LogLevel level, const char *file, int line, const char *format, ...) {
+    std::lock_guard<std::mutex> lock(log_mutex);
     static int init = 0;
     if (!init) {
         setupLoggerFromEnv();

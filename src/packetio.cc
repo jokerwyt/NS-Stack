@@ -4,7 +4,9 @@
 #include "pnx_ip.h"
 #include "arp.h"
 #include "routing.h"
+#include "gracefully_shutdown.h"
 
+#include <mutex>
 #include <pcap.h>
 #include <atomic>
 #include <thread>
@@ -12,6 +14,9 @@
 static std::atomic<FrameReceiveCallback> recv_callback{nullptr};
 
 int send_frame(const void* buf, int len, int ethtype, const ether_addr* destmac, int id) {
+    static std::mutex mutex;
+    std::lock_guard<std::mutex> lock(mutex);
+
     char frame[ETHER_MAX_LEN];
 
     struct ether_header *eth_header;
@@ -107,15 +112,35 @@ int set_frame_receive_callback(FrameReceiveCallback callback) {
     return 0;
 }
 
+#include <mutex>
+
 int recv_thread_go(int device_id) {
+    static std::atomic<bool> stop{false};
+    static std::vector<std::thread> threads;
+    static std::mutex mutex;
+    static bool init = false;
+    std::lock_guard<std::mutex> lock(mutex);
+    
+    if (init == false) {
+        init = true;
+        add_exit_clean_up([&]() {
+            stop.store(true);
+            for (auto& t : threads) {
+                t.join();
+            }
+        }, EXIT_CLEAN_UP_PRIORITY_LINK_RECVING);
+    }
+
     std::thread recv = std::thread([device_id]() {
         pcap_t *dev = get_pcap_handle(device_id);
-        while (1) {
-            pcap_loop(dev, -1 /* infinity */, 
-                callback_wrapper, (u_char*) &device_id);
-            logWarning("device %d frame handler pcap_loop exit. try again...", device_id);
+        while (stop.load() == false) {
+            if (pcap_dispatch(dev, -1, callback_wrapper, (u_char*) &device_id) == -1) {
+                logError("pcap_dispatch error");
+                return -1;
+            }
         }
+        return 0;
     });
-    recv.detach();
+    threads.push_back(std::move(recv));
     return 0;
 }

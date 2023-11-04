@@ -7,13 +7,9 @@
 using namespace std;
 
 int main(int argc, char *argv[]) {
-  if (argc != 2) {
-    printf("usage: %s <Port>\n", argv[0]);
-    return -1;
-  }
 
   // get the server port
-  int port = atoi(argv[1]);
+  int port = 12345;
 
 
   // get a socket and listen

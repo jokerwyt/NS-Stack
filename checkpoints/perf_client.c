@@ -83,6 +83,7 @@ int main(int argc, char *argv[]) {
 
     cmp_line();
   }
+  close(sockfd);
   
   return 0;
 }

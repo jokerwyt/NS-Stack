@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <thread>
 
+#include "ringbuffer.h"
 #include "pnx_utils.h"
 #include "logger.h"
 #include "rustex.h"
@@ -30,7 +31,7 @@ struct SocketBlock {
     TCB* tcb;
 
     // only for PASSIVE_LISTENING socket.
-    rustex::mutex<std::vector<TCB*>> accepting;
+    BlockingRingBuffer<TCB*, 1024> accepting;
     // max backlog to-accept TCB
     int backlog;
 };
@@ -234,16 +235,17 @@ int __wrap_accept(int socket, struct sockaddr *remote_addr, socklen_t *address_l
     TCB* tcb = nullptr;
     while (tcb == nullptr) {
         {
-            auto ac = sb->accepting.lock_mut();
-            // find an ESTABLISHED connection.
-
-            for (auto it = ac->begin(); it != ac->end(); it++) {
-                if (tcp_getstate(*it) == TCP_ESTABLISHED) {
-                    tcb = *it;
-                    ac->erase(it);
-                    break;
-                }
+            auto ac = sb->accepting.pop();
+            if (!ac.has_value()) {
+                continue;
             }
+            auto candidate = ac.value();
+
+            if (tcp_getstate(candidate) == TCP_ESTABLISHED) {
+                tcb = candidate;
+                break;
+            }
+            assert(1 == sb->accepting.push(candidate));
         }
         if (tcb == nullptr)
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -362,12 +364,14 @@ int __wrap_close(int fildes) {
         }
     } else if (sb->state == SocketBlock::PASSIVE_BINDED || sb->state == SocketBlock::PASSIVE_LISTENING) {
         tcp_unregister_listening_socket(sb, sb->addr.sin_port);
-        auto ac = sb->accepting.lock_mut();
-        while (!ac->empty()) {
-            if (tcp_close(ac->back()) < 0) {
+
+        while (sb->accepting.size() > 0) {
+            auto tcb = sb->accepting.pop();
+            if (tcb.has_value() == false) break; // all clean up
+
+            if (tcp_close(tcb.value()) < 0) {
                 logWarning("fail to close a TCP connection.");
             }
-            ac->pop_back();
         }
     } else {
         logWarning("close a socket with invalid state");
@@ -405,13 +409,12 @@ int socket_recv_new_tcp_conn(SocketBlock *sb, TCB* tcb) {
     }
 
     {
-        auto ac = sb->accepting.lock_mut();
-        if (ac->size() >= (size_t)sb->backlog) {
+        if (sb->accepting.size() >= (size_t)sb->backlog) {
             logWarning("passive socket backlog is full.");
             errno = EINVAL;
             return -1;
         }
-        ac->push_back(tcb);
+        sb->accepting.push(tcb);
     }
 
     logInfo("a new connection is added to socket %d", sb->fd);

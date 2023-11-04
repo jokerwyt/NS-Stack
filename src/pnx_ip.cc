@@ -152,7 +152,7 @@ int ip_send_packet(const in_addr src, const in_addr dest, int proto,
 
         add_exit_clean_up([&]() {
             stop.store(true);
-        }, EXIT_CLEAN_UP_PRIORITY_IP);
+        }, EXIT_CLEAN_UP_PRIORITY_IP_SENDING);
     }
 
     while (ip_sending_buffer.push(std::make_tuple(src, dest, proto, buf, len)) != true);
@@ -218,30 +218,26 @@ int ip_packet_handler(const void *buf, int len) {
     }
 
     // check if the packet is for me.
+    if (dev_ip(dev_id)->s_addr == ip_header->daddr) {
+        // the packet is for me.
+        // pass it to the upper layer.
+        // for now we just log it.
 
-    int dev_cnt = get_dev_cnt();
-    for (int w = 0; w < dev_cnt; w++) {
-        if (dev_ip(w)->s_addr == ip_header->daddr) {
-            // the packet is for me.
-            // pass it to the upper layer.
-            // for now we just log it.
+        logInfo("a IP packet for me: %s. src=%s", 
+            inet_ntoa_safe(in_addr{ip_header->daddr}).get(), 
+            inet_ntoa_safe(in_addr{ip_header->saddr}).get());
+        
 
-            logInfo("a IP packet for me: %s. src=%s", 
-                inet_ntoa_safe(in_addr{ip_header->daddr}).get(), 
-                inet_ntoa_safe(in_addr{ip_header->saddr}).get());
-            
-
-            // pass it to the upper layer.
-            tcp_segment_handler((char*)buf + ip_header->ihl * 4, len - ip_header->ihl * 4, 
-                in_addr{ip_header->saddr}, in_addr{ip_header->daddr});
-            
-            // if the callback is set, call it.
-            if (ip_callback.load() != nullptr) {
-                return ip_callback.load()(buf, len);
-            }
-
-            return 0;
+        // pass it to the upper layer.
+        tcp_segment_handler((char*)buf + ip_header->ihl * 4, len - ip_header->ihl * 4, 
+            in_addr{ip_header->saddr}, in_addr{ip_header->daddr});
+        
+        // if the callback is set, call it.
+        if (ip_callback.load() != nullptr) {
+            return ip_callback.load()(buf, len);
         }
+
+        return 0;
     }
 
     // otherwise, forward it.

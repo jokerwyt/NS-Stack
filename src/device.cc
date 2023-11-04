@@ -22,6 +22,9 @@ static struct in_addr dev_mask_addr[MAX_DEVICE_NUM];
 static pcap_t *dev[MAX_DEVICE_NUM];
 
 int add_device(const char* device) {
+    static std::mutex mutex;
+    std::lock_guard<std::mutex> lock(mutex);
+
     static std::once_flag flag;
     std::call_once(flag, []() {
         // ========== fire routing upd timer ==========
@@ -33,21 +36,26 @@ int add_device(const char* device) {
     // to avoid the delay of pcap_open_live.
 
     char errbuf[PCAP_ERRBUF_SIZE];
-    pcap_t *handle = pcap_create(device, errbuf);
+    pcap_t *handle = pcap_open_live(device, (1 << 20), 1, 1, errbuf);
     if (handle == NULL) {
         logError("fail to create pcap handle. errmsg=%s", errbuf);
         return -1;
     }
-    if (pcap_set_immediate_mode(handle, 1) != 0) {
-        logError("fail to set pcap immediate mode. errmsg=%s", pcap_geterr(handle));
+    if (pcap_setnonblock(handle, 1, errbuf) != 0) {
+        logError("fail to set pcap handle nonblock. errmsg=%s", errbuf);
         pcap_close(handle);
         return -1;
     }
-    if (pcap_activate(handle) != 0) {
-        logError("fail to activate pcap handle. errmsg=%s", pcap_geterr(handle));
-        pcap_close(handle);
-        return -1;
-    }
+    // if (pcap_set_immediate_mode(handle, 1) != 0) {
+    //     logError("fail to set pcap immediate mode. errmsg=%s", pcap_geterr(handle));
+    //     pcap_close(handle);
+    //     return -1;
+    // }
+    // if (pcap_activate(handle) != 0) {
+    //     logError("fail to activate pcap handle. errmsg=%s", pcap_geterr(handle));
+    //     pcap_close(handle);
+    //     return -1;
+    // }
 
     int new_id = atomic_fetch_add(&device_count, 1);
 

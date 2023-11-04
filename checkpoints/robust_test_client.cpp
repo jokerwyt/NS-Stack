@@ -101,4 +101,6 @@ int main(int argc, char *argv[]) {
     t.join();
   }
   cout << "Finished" << endl;
+
+  sleep(1); // wait connection close
 }

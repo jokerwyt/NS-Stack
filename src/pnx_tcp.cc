@@ -47,6 +47,7 @@ struct SocketPairHash {
 
 // for those TCB owned by a socket.
 static std::unordered_map<SocketPair, TCB*, SocketPairHash> active_tcb_map{};
+static std::unordered_map<SocketPair, TCB*, SocketPairHash> orphaned_tcb_map{};
 static std::unordered_map<uint16_t, SocketBlock*> listening_socket;
 
 static int _tcp_close(TCB *tcb);
@@ -63,6 +64,13 @@ public:
                     // stop the timer. （if it's not stopped yet)
                     tcb->timer_stop.store(true);
                     tcb->timer.join();
+
+
+                    // remove from orphaned_tcb_map
+                    std::unique_lock<std::mutex> lock(tcp_lock);
+                    orphaned_tcb_map.erase({tcb->local, tcb->remote});
+                    lock.unlock();
+
                     logInfo("tcb_recycler: delete tcb %x", tcb);
                     delete tcb;
                 } else {
@@ -82,11 +90,12 @@ public:
                 _tcp_close(tcb);
             }
             lock.unlock();
+            // orphaned_tcbs close has been sent.
 
             tcb_recycler_can_stop.store(true);
             tcb_recycler.join();
 
-        }, EXIT_CLEAN_UP_PRIORITY_TCP);
+        }, EXIT_CLEAN_UP_PRIORITY_TCP_RECVING);
     }
 };
 
@@ -224,7 +233,8 @@ static int _tcp_send_pure_ACK(TCB *tcb) {
     ack.hdr->seq = tcb->send.next;
     ack.hdr->ack_seq = tcb->recv.next;
     ack.hdr->ack = 1;
-    // ack.hdr->window = tcb->recv.buf.rest_capacity();
+    ack.hdr->doff = sizeof(struct tcphdr) / 4;
+    ack.hdr->window = tcb->recv.buf.rest_capacity();
 
     ack.ntoh(); // reverse some fields
 
@@ -270,7 +280,7 @@ static int _tcp_send_segment(TCB* tcb) {
     // if a initial SYN is sent, then the ack bit is 0.
     // Otherwise we always send a ACK.
     hdr->ack = tcb->state == TCP_SYN_SENT ? 0 : 1;
-    // hdr->window = tcb->recv.buf.rest_capacity();
+    hdr->window = tcb->recv.buf.rest_capacity();
     
     if (tcb->send.buf.peek().value().isCtrl()) {
         payload_len = 0;
@@ -343,7 +353,12 @@ static TCB* _tcp_open(const sockaddr_in* local, const sockaddr_in* given_remote,
     SocketPair pair{*local, remote};
 
     if (active_tcb_map.find(pair) != active_tcb_map.end()) {
-        logWarning("unimplemented tcp_open: already exists");
+        logWarning("unimplemented tcp_open: already exists (active)");
+        return nullptr;
+    }
+
+    if (orphaned_tcb_map.find(pair) != orphaned_tcb_map.end()) {
+        logWarning("unimplemented tcp_open: already exists (orphaned)");
         return nullptr;
     }
 
@@ -451,6 +466,7 @@ static int _tcp_close(TCB *tcb) {
 
     // insert into orphaned_tcb 
     orphaned_tcb.push(tcb);
+    orphaned_tcb_map[SocketPair{tcb->local, tcb->remote}] = tcb; // we hold the lock. No race here.
     return 0;
 }
 
@@ -508,7 +524,7 @@ int tcp_receive(TCB *tcb, void *buf, int len) {
 
     // we only care about recv.buf, no matter what state we are.
     
-    int recv = std::min(len, (int)tcb->recv.buf.size());\
+    int recv = std::min(len, (int)tcb->recv.buf.size());
     assert(true == tcb->recv.buf.pop((char*) buf, recv));
 
     // int recv = 0;
@@ -608,18 +624,11 @@ static int _tcp_handle_segment_established(TCB *tcb, std::shared_ptr<Segment> se
     // normal or fin
 
     // handle ack update first
-    bool ack_upd = false;
     if (seg->hdr->ack_seq > tcb->send.unack) {
         
         logDebug("tcp_handle_segment_established: ack upd. ack_seq=%u, unack=%u", seg->hdr->ack_seq, tcb->send.unack);
-        ack_upd = true;
         tcb->send.unack = seg->hdr->ack_seq;
     }
-
-    // if (tcb->recv.buf.rest_capacity() < size_t(seg->len - sizeof(struct tcphdr))) {
-    //     logWarning("tcp_handle_segment_established: too much data to recv");
-    //     return -1;
-    // }
 
     if (seg->have_payload())
         logTrace("tcp_handle_segment_established: recv %llu bytes", seg->payload_len());
@@ -636,15 +645,6 @@ static int _tcp_handle_segment_established(TCB *tcb, std::shared_ptr<Segment> se
 
     tcb->recv.next += seg->payload_len();
 
-    // for (size_t i = sizeof(struct tcphdr); i < seg->len; i++) {
-    //     tcb->recv.buf.push_back(((char*)seg->buf.get())[i]);
-    //     // if (tcb->recv.buf.push(((char*)seg->buf.get())[i]) == 0) {
-    //     //     logWarning("tcp_handle_segment_established: fail to push data into buffer");
-    //     //     return -1;
-    //     // }
-    //     tcb->recv.next++;
-    // }
-
     // handle fin
     if (seg->hdr->fin == 1) {
         logDebug("state trans: TCP_ESTABLISHED -> TCP_CLOSE_WAIT");
@@ -652,7 +652,7 @@ static int _tcp_handle_segment_established(TCB *tcb, std::shared_ptr<Segment> se
         tcb->recv.next++;
     }
 
-    if (seg->need_to_ack() || ack_upd)
+    if (seg->need_to_ack())
         if (_tcp_make_sure_sendback(tcb) < 0) {
             logWarning("tcp_handle_segment_established: fail to sendback");
             return -1;
@@ -686,6 +686,13 @@ static int _tcp_handle_segment_fin_wait1(TCB *tcb, std::shared_ptr<Segment> seg)
             logWarning("tcp_handle_segment_fin_wait1: fail to sendback");
             return -1;
         }
+        tcb->state = TCP_CLOSING;
+        
+        // if my FIN is acked, trans to TCP_TIME_WAIT directly
+        if (tcb->send.waiting_for_ack() == false) {
+            tcb->state = TCP_TIME_WAIT;
+        }
+
         return 0;
     }
 
@@ -763,6 +770,7 @@ static int _tcp_handle_segment_last_ack(TCB *tcb, std::shared_ptr<Segment> seg) 
 
     logDebug("state trans: TCP_LAST_ACK -> TCP_CLOSE");
     tcb->state = TCP_CLOSE;
+    tcb->send.unack++;
     return 0;
 }
 
@@ -784,7 +792,7 @@ int tcp_segment_handler(const void* buf, int len, const struct in_addr& src, con
     std::shared_ptr<Segment> seg = std::make_shared<Segment>(buf, len, src, dst);
 
 
-    // the very first things is to check the checksum.
+    // the very first thing is to check the checksum.
     auto ck = seg->hdr->check;
     seg->fill_in_tcp_checksum();
     if (seg->hdr->check != ck) {
@@ -824,20 +832,24 @@ int tcp_segment_handler(const void* buf, int len, const struct in_addr& src, con
     }
 
     // for other cases, there should be a specific socket to handle this segment.
-    if (active_tcb_map.find(tuple4) == active_tcb_map.end()) {
-        logWarning("tcp_segment_handler: no active socket can reponse to SYNACK. tuple4: from %s:%d to %s:%d", 
+    TCB *tcb = nullptr;
+    if (active_tcb_map.find(tuple4) != active_tcb_map.end()) {
+        tcb = active_tcb_map[tuple4];
+    } else if (orphaned_tcb_map.find(tuple4) != orphaned_tcb_map.end()) {
+        tcb = orphaned_tcb_map[tuple4];
+    } else {
+        logWarning("tcp_segment_handler: no open socket can reponse. tuple4: from %s:%d to %s:%d", 
             inet_ntoa_safe(tuple4.local.sin_addr).get(), ntohs(tuple4.local.sin_port), 
             inet_ntoa_safe(tuple4.remote.sin_addr).get(), ntohs(tuple4.remote.sin_port));
         return -1;
     }
-    TCB *tcb = active_tcb_map[tuple4];
 
     if (tcb->state == TCP_CLOSE) {
         logWarning("tcp_segment_handler: recv a segment when the connection closed");
         return -1;
     }
 
-    // the very first things is to check the seq.
+    // the second thing is to check the seq.
     // if the seq does not match, we abandon this segment and clarify our progress again. 
     // reasons: maybe last connection with the same tuple4, or outdated segment, or ACK loss.
     
